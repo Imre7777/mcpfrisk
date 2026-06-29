@@ -39,23 +39,29 @@ dependency-free base install.
 
 ---
 
-## Phase 2: Foundational (Blocking Prerequisites)
+## Phase 2: Foundational (Blocking Prerequisites) — ARCHITECTURE LAYER, stop-for-review
 
-**Purpose**: The shared `core/sourcetree` analysis layer every check branch depends on.
+**Purpose**: Build the language-agnostic `SourceModel` port and BOTH adapters in isolation,
+validated by their own tests, before any check is migrated. This is the only phase delivered
+in the current iteration (full Clean Architecture decision; maintainer reviews here).
 
-**⚠️ CRITICAL**: No user-story work begins until this phase is complete.
+**⚠️ CRITICAL**: No user-story (check-migration) work begins until this phase is reviewed.
 
 ### Foundational tests (write FIRST, confirm RED) ⚠️
 
-- [ ] T004 [P] Create `tests/test_jsts_analyzer.py` asserting: (a) a valid `.ts` snippet parses to `ParsedSource(ok=True)`; (b) a syntactically broken `.ts` still returns `ok=True` with a usable tree (tree-sitter recovers, FR-007); (c) when the parser/extra is simulated-absent, `analyze()` returns `ParsedSource(ok=False)` and `jsts_available()` is `False` — never raises, never signals "clean". Confirm FAILING.
+- [ ] T004 [P] Create `tests/test_sourcetree.py` asserting the **port contract on both adapters** over equivalent Python and TS snippets: (a) `call_sites()` finds an `exec`/`subprocess.run` call and classifies an interpolated vs array argument; (b) `tool_definitions()` returns the description of a decorator-tool (Py) and a `server.tool(...)` (TS); (c) `functions()` exposes params + body calls; (d) `assignments()`/`string_literals()` expose a secret-named binding and its env-lookup safety; (e) a malformed Python file → `ok=False`, a malformed TS file → `ok=True` with a partial tree (FR-007); (f) parser-absent simulation → JS/TS `analyze()` yields `ok=False` and `jsts_available()` is `False` (never raises, never "clean"). Confirm FAILING.
 
 ### Foundational implementation
 
-- [ ] T005 Create `mcpfrisk/core/sourcetree/__init__.py` exposing `analyze(path) -> ParsedSource | None`, `jsts_available() -> bool`, and the `SourceLanguage` enum + extension mapping (`.js/.mjs/.cjs/.jsx`, `.ts/.mts/.cts`, `.tsx`) per data-model.md. Returns `None` for non-JS/TS paths.
-- [ ] T006 Create `mcpfrisk/core/sourcetree/analyzer.py`: `ParsedSource` and `NodeMatch` dataclasses, lazy parser import (so missing extra ⇒ `ok=False`, not ImportError at module load), byte-based parse, and the node→`(line, snippet)` evidence helper (Principle V).
-- [ ] T007 Create `mcpfrisk/core/sourcetree/jsts.py`: the tree-sitter adapter + query helpers from contracts/interfaces.md — `calls_to(callee_names)`, `string_arguments(match)`, `tool_descriptions()`, `functions_with_params(name_hints)`, `string_literals()` — selecting the `typescript`/`tsx`/`javascript` grammar per `SourceLanguage`. Make T004 GREEN.
+- [ ] T005 Create `mcpfrisk/core/sourcetree/model.py`: the `SourceModel` protocol + value objects (`SourceLanguage`, `CallSite`, `Argument`, `FunctionDef`, `ToolDefinition`, `StringLiteral`, `Assignment`) per data-model.md, with the node→`(line, snippet)` evidence convention (Principle V).
+- [ ] T006 Create `mcpfrisk/core/sourcetree/python_ast.py`: `PythonAstAdapter` implementing every `SourceModel` query via stdlib `ast`, behaviour-equivalent to the inline `ast` use in today's checks (a `SyntaxError` file ⇒ `ok=False`). No check is modified.
+- [ ] T007 Create `mcpfrisk/core/sourcetree/treesitter.py`: `TreeSitterAdapter` implementing the same queries for JS/TS/TSX, selecting the `typescript`/`tsx`/`javascript` grammar per `SourceLanguage`, with lazy tree-sitter import (missing extra ⇒ `ok=False`, not ImportError at load). Then `core/sourcetree/__init__.py` with `analyze(path)` (dispatches to the right adapter by extension) and `jsts_available()`. Make T004 GREEN.
 
-**Checkpoint**: The analyzer parses JS/TS, recovers from malformed input, and degrades cleanly when the extra is missing. Checks can now consume it.
+**Checkpoint (STOP FOR REVIEW)**: The port + both adapters parse and answer identical domain
+queries for Python and JS/TS, recover from malformed input, and degrade cleanly when the
+`jsts` extra is missing — all proven by `tests/test_sourcetree.py`, with the four checks
+still untouched and the full existing suite green. **Review the abstraction here before the
+check migration (US1–US3) begins.**
 
 ---
 
@@ -76,12 +82,12 @@ dependency-free base install.
 - [ ] T014 [US1] Add `tests/test_jsts_path_traversal.py::test_vuln_ts_is_flagged` (PATH_TRAVERSAL). Confirm RED.
 - [ ] T015 [US1] Add `tests/test_jsts_secrets.py::test_vuln_ts_is_flagged` (HARDCODED_SECRETS) — confirms parity (may already pass via existing cross-language regex; lock it in).
 
-### Implementation for User Story 1
+### Implementation for User Story 1 (rewrite each check ONCE against the port — no per-language branches)
 
-- [ ] T016 [US1] In `mcpfrisk/checks/command_injection.py`: replace `_scan_js_file` (line-regex) with an AST branch using `sourcetree.analyze` + `calls_to({"exec","execSync","child_process.exec",…})` and `string_arguments` (template-literal substitution / concatenation ⇒ finding). Keep the existing regex as the parser-absent fallback. Make T012 GREEN.
-- [ ] T017 [US1] In `mcpfrisk/checks/tool_poisoning.py`: widen `run`/`applies_to` to JS/TS and scan `tool_descriptions()` with the existing poisoning pattern families. Make T013 GREEN.
-- [ ] T018 [US1] In `mcpfrisk/checks/path_traversal.py`: widen `applies_to` to JS/TS and add a branch using `functions_with_params(path_hints)` + `calls_to({"fs.readFile…","open","path.join",…})` with the same "no visible normalization" heuristic. Make T014 GREEN.
-- [ ] T019 [US1] In `mcpfrisk/checks/hardcoded_secrets.py`: confirm `.ts` is in the scanned extension set and T015 passes; no behaviour change yet (FP-scoping happens in US2).
+- [ ] T016 [US1] Rewrite `mcpfrisk/checks/command_injection.py` against `analyze(...).call_sites()`: match callee in the danger set, inspect `Argument` (`is_array` ⇒ safe; `has_interpolation`/`is_truthy_constant` shell flag ⇒ finding). One code path serves Python + JS/TS. Keep the old regex only as the `jsts_available()`-False fallback. Make T012 GREEN without regressing the Python tests.
+- [ ] T017 [US1] Rewrite `mcpfrisk/checks/tool_poisoning.py` against `tool_definitions()`: run the existing poisoning pattern families on `.description`. Covers Python decorators + JS/TS `server.tool(...)` via the port. Make T013 GREEN.
+- [ ] T018 [US1] Rewrite `mcpfrisk/checks/path_traversal.py` against `functions()` + `body_calls` + `Argument.referenced_names` (taint) with the same "no visible normalization" heuristic. Make T014 GREEN.
+- [ ] T019 [US1] Rewrite `mcpfrisk/checks/hardcoded_secrets.py` against `assignments()`/`string_literals()` (env-lookup safe). Confirm T015 passes; full FP-scoping completed in US2.
 
 **Checkpoint**: Every check fires on its vulnerable JS/TS fixture — parity TP achieved. MVP deliverable.
 

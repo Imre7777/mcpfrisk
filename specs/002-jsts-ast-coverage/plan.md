@@ -6,15 +6,18 @@
 
 ## Summary
 
-Bring JS/TS scanning to parity with Python by introducing one shared, parser-backed
-**source-tree analysis layer** that the existing static checks consume — the JS/TS
-counterpart to Python's stdlib `ast`. Today only `CMD_INJECTION` looks at JS/TS (and only
-via line-regex), `PATH_TRAVERSAL` and `TOOL_POISONING` skip JS/TS entirely, and
-`HARDCODED_SECRETS` is already language-agnostic regex. The plan adds an error-tolerant
-JS/TS parser (`tree-sitter` + the JS/TS grammars) behind a new **opt-in `jsts` extra**, so
-the base install stays dependency-free and degrades gracefully when the extra is absent.
-Each of the four checks gains a thin JS/TS branch that delegates to the shared analyzer; no
-check depends on another, preserving plugin isolation.
+Bring JS/TS scanning to parity with Python by introducing — in full Clean-Architecture form
+— one **language-agnostic `SourceModel` port** with two adapters: `PythonAstAdapter` (stdlib
+`ast`) and `TreeSitterAdapter` (JS/TS via tree-sitter). The four checks are rewritten **once**
+against the port's domain vocabulary (call sites, functions, tool definitions, string/assign
+literals) and never import a parser directly. Today only `CMD_INJECTION` looks at JS/TS (line-
+regex only), `PATH_TRAVERSAL` and `TOOL_POISONING` skip JS/TS entirely, and `HARDCODED_SECRETS`
+is cross-language regex. The parser lives behind a new **opt-in `jsts` extra**, so the base
+install stays dependency-free and degrades gracefully when the extra is absent.
+
+**Delivery is staged**: this iteration builds and reviews **only the architecture layer** (the
+port + both adapters + their tests). The four checks are migrated onto the port only after that
+review, so the abstraction is validated in isolation before any check is touched.
 
 ## Technical Context
 
@@ -102,38 +105,37 @@ specs/002-jsts-ast-coverage/
 ```text
 mcpfrisk/
 ├── core/
-│   ├── sourcetree/            # NEW: shared, language-agnostic parsed-source layer
-│   │   ├── __init__.py        #   public surface: analyze(path) -> ParsedSource | None
-│   │   ├── analyzer.py        #   loads the parser, parses bytes, exposes query helpers
-│   │   └── jsts.py            #   tree-sitter JS/TS/TSX adapter + tree-query primitives
+│   ├── sourcetree/            # NEW package: the SourceModel port + adapters
+│   │   ├── __init__.py        #   public surface: analyze(path), jsts_available()
+│   │   ├── model.py           #   SourceModel port + value objects (CallSite, Argument,
+│   │   │                      #     FunctionDef, ToolDefinition, StringLiteral, Assignment)
+│   │   ├── python_ast.py      #   PythonAstAdapter  (stdlib `ast`)
+│   │   └── treesitter.py      #   TreeSitterAdapter (JS/TS/TSX, lazy tree-sitter import)
 │   ├── fs.py                  # UNCHANGED (rglob_or_file already handles file/dir targets)
 │   └── models.py              # UNCHANGED (Finding/Severity reused as-is)
-├── checks/
-│   ├── command_injection.py   # EXTEND: replace JS line-regex with AST branch (multi-line + comment-safe)
-│   ├── path_traversal.py      # EXTEND: add JS/TS branch (currently Python-only)
-│   ├── tool_poisoning.py      # EXTEND: add JS/TS branch — scan server.tool(...) descriptions/metadata
-│   ├── hardcoded_secrets.py   # OPTIONAL: use AST string-literal context to drop comment FPs (regex stays)
+├── checks/                    # ← migrated onto the port AFTER the foundation review
+│   ├── command_injection.py   #   (later) rewrite against call_sites(); regex kept as jsts-absent fallback
+│   ├── path_traversal.py      #   (later) rewrite against functions()/body_calls()
+│   ├── tool_poisoning.py      #   (later) rewrite against tool_definitions()
+│   ├── hardcoded_secrets.py   #   (later) rewrite against assignments()/string_literals()
 │   └── registry.py            # UNCHANGED (no new check ids)
-└── cli.py                     # UNCHANGED (scan already accepts JS/TS paths)
+└── cli.py                     # (later) one-time jsts-absent skip notice
 
 tests/
-├── fixtures/jsts/
-│   ├── cmd_injection_vuln.ts / cmd_injection_clean.ts
-│   ├── path_traversal_vuln.ts / path_traversal_clean.ts
-│   ├── tool_poisoning_vuln.ts / tool_poisoning_clean.ts
-│   ├── secrets_vuln.ts / secrets_clean.ts
-│   └── accuracy_multiline.ts / accuracy_comment_string.ts   # SC-003 / SC-004 guards
-├── test_jsts_command_injection.py
-├── test_jsts_path_traversal.py
-├── test_jsts_tool_poisoning.py
-└── test_jsts_accuracy.py        # multi-line TP + comment/string FP guards, parser-absent skip
+├── test_sourcetree.py         # THIS iteration: port + both adapters (Python AST + tree-sitter)
+│                              #   parse, query parity on equivalent Py/TS snippets,
+│                              #   malformed-file + parser-absent handling
+├── fixtures/jsts/             # (later) per-check vulnerable/clean + accuracy fixtures
+└── test_jsts_*.py             # (later) per-check parity, FP guards, accuracy
 ```
 
-**Structure Decision**: Single-project layout (existing). All JS/TS parsing lives in one
-new `core/sourcetree` package; the four checks call into it through a small stable surface,
-so adding JS/TS support to a future check is "ask the analyzer", not "re-implement parsing".
-This keeps the Open/Closed isolation of Principle II intact even though existing check files
-are edited for their new language branch.
+**Structure Decision**: Single-project layout (existing). Clean Architecture made explicit:
+`core/sourcetree/model.py` is the **domain port**, `python_ast.py`/`treesitter.py` are
+**infrastructure adapters**, the checks remain the **use-case layer** and depend only on the
+port. Dependency direction points inward (checks → port → value objects; adapters → port).
+Adding a future language = a new adapter only; adding a future check = one file written
+against the port. This iteration delivers the port + adapters + tests; the check migration is
+a separate, reviewable step.
 
 ## Complexity Tracking
 
@@ -142,4 +144,4 @@ are edited for their new language branch.
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
 | New Tier-1 dependency (`tree-sitter` + JS/TS grammars) under an opt-in `jsts` extra | The Python stdlib has no JS/TS/TSX parser; semantic parity (FR-001/005/006) is impossible with stdlib alone | (a) Keep line-regex → rejected: cannot satisfy SC-003/SC-004 (multi-line / comment-string), the whole point of the feature. (b) Shell out to a Node/TypeScript toolchain → rejected: forces every user to install Node, far worse friction than a pip extra. (c) Hand-write a JS/TS parser → rejected: enormous, brittle, and itself a bug/attack surface a security tool can't justify. tree-sitter ships pre-compiled wheels with no library deps and is error-tolerant (ideal for FR-007). |
-| Editing the four existing check files (touches `command_injection.py`, `path_traversal.py`, `tool_poisoning.py`, `hardcoded_secrets.py`) | This feature is *language coverage* for existing checks, not a new check; each must learn to read its JS/TS branch | Adding a parallel "JS/TS-only" duplicate of each check → rejected: would split one vulnerability class across two files, doubling maintenance and breaking the "one check id = one place" model. Shared analyzer + thin per-check branch keeps checks mutually isolated (Principle II's real intent). |
+| Rewriting the four existing checks against the new port (touches `command_injection.py`, `path_traversal.py`, `tool_poisoning.py`, `hardcoded_secrets.py`) + migrating their tests | Full Clean Architecture: checks become language-agnostic use-cases over one port instead of carrying parser code; this is language coverage for existing checks, not new checks | (a) Per-language `if`-branches inside each check → rejected: scatters language dispatch across use-cases (the "Wurst" the maintainer flagged). (b) Parallel JS/TS-only duplicate checks → rejected: splits one vulnerability class across two files. The port + adapters keep checks mutually isolated (Principle II's real intent) and confine both parsers to the infra layer. Regression risk is bounded by doing the port in isolation first (stop-for-review) and keeping the Python adapter behaviour-equivalent to today's inline `ast` use. |

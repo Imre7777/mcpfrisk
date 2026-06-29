@@ -34,10 +34,24 @@ classifiers = [
 # o.ä. zwingend braucht: als optionales Extra ergänzen, nicht als Pflicht.
 dependencies = []
 
+# Optionales Extra für die JS/TS-Analyse (Tier 1, sprach-agnostischer SourceModel-Port).
+# Der Basis-Install bleibt bewusst stdlib-only (dependencies = []); wer JS/TS-Server
+# mit gleicher Tiefe wie Python scannen will, installiert mcpfrisk[jsts]. Der
+# tree-sitter-Parser wird ausschließlich im Infrastruktur-Adapter (core/sourcetree)
+# verwendet, nie direkt in den Checks. Fehlt das Extra, werden JS/TS-Dateien sauber
+# übersprungen (nie als "clean" gewertet), statt zu crashen.
 [project.optional-dependencies]
+jsts = [
+    "tree-sitter>=0.21",
+    "tree-sitter-typescript",
+    "tree-sitter-javascript",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
+    "tree-sitter>=0.21",
+    "tree-sitter-typescript",
+    "tree-sitter-javascript",
 ]
 
 [project.scripts]

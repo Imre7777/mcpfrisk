@@ -1,85 +1,118 @@
 # Phase 1 Data Model: First-class JavaScript/TypeScript analysis
 
-This feature adds **no new finding types** and changes no existing model in
-`mcpfrisk/core/models.py`. The new types are analysis-layer helpers in
-`mcpfrisk/core/sourcetree/`. `Finding` and `Severity` are reused unchanged.
+**Architecture decision (full Clean Architecture)**: introduce one **language-agnostic
+`SourceModel` port** with two adapters — `PythonAstAdapter` (stdlib `ast`) and
+`TreeSitterAdapter` (JS/TS via tree-sitter). The four checks are (re)written **once** against
+the port's domain vocabulary and never see `ast` or `tree_sitter` directly. This file defines
+that vocabulary. No new finding types; `Finding`/`Severity` in `core/models.py` are reused.
+
+> The value objects below are the *domain language of static analysis* as the checks need it
+> — driven by the four existing checks' actual requirements (call inspection, taint over
+> parameters, tool descriptions, string/secret literals). Each adapter maps its native tree
+> onto these.
 
 ## Enum: `SourceLanguage`
 
-Identifies which adapter parses a file. Derived from the file extension.
+| Value | Extensions | Adapter | Grammar/dialect |
+|-------|-----------|---------|-----------------|
+| `PYTHON` | `.py` | `PythonAstAdapter` | stdlib `ast` |
+| `JAVASCRIPT` | `.js`, `.mjs`, `.cjs`, `.jsx` | `TreeSitterAdapter` | `javascript` (`.jsx`→`tsx`) |
+| `TYPESCRIPT` | `.ts`, `.mts`, `.cts` | `TreeSitterAdapter` | `typescript` |
+| `TSX` | `.tsx` | `TreeSitterAdapter` | `tsx` |
 
-| Value | Extensions |
-|-------|-----------|
-| `PYTHON` | `.py` |
-| `JAVASCRIPT` | `.js`, `.mjs`, `.cjs`, `.jsx` |
-| `TYPESCRIPT` | `.ts`, `.mts`, `.cts` |
-| `TSX` | `.tsx` |
+## Port: `SourceModel`
 
-> JS/JSX → the `javascript`/`tsx` grammar; TS → the `typescript` grammar; TSX → the `tsx`
-> grammar. Flow-annotated `.js` is parsed with `tsx` (see research R2).
+One parsed file, queried through language-neutral methods. Returned by `analyze(path)`.
 
-## Entity: `ParsedSource`
-
-The result of analyzing one file — the JS/TS counterpart to a Python `ast.Module`.
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `path` | `Path` | The scanned file |
+| Member | Type | Notes |
+|--------|------|-------|
+| `path` | `Path` | The file |
 | `language` | `SourceLanguage` | Resolved from extension |
-| `text` | `bytes` | Raw source (parser works on bytes; needed for snippet extraction) |
-| `tree` | parser tree handle | The error-tolerant syntax tree (opaque to checks) |
-| `ok` | `bool` | `False` if the parser/extra was unavailable; `True` even for partially-broken input (tree-sitter recovers) |
+| `ok` | `bool` | `False` only when the file could not be parsed at all (e.g. JS/TS but the `jsts` extra is absent). A recoverable/partial tree is still `ok=True`. Never means "clean". |
+| `call_sites()` | `list[CallSite]` | Every call expression in the file |
+| `functions()` | `list[FunctionDef]` | Every function/method definition |
+| `tool_definitions()` | `list[ToolDefinition]` | MCP tool registrations + their description text |
+| `string_literals()` | `list[StringLiteral]` | All string/template literals (scopes secret scanning away from comments) |
+| `assignments()` | `list[Assignment]` | Name = value bindings (for secret/heuristic checks) |
 
-**Rule**: A file that cannot be parsed at all (parser/extra missing) yields
-`ParsedSource(ok=False, ...)`; checks treat it as "not analyzable" and skip it — never as
-clean (Principle III). A file with `ERROR` nodes but a usable tree is still `ok=True`; checks
-inspect what parsed.
+## Value object: `CallSite`
 
-## Entity: `NodeMatch`
-
-A single hit a check cares about, with the evidence needed for a `Finding`.
+The unit `CMD_INJECTION` (and the path sink detection) reasons over.
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `line` | `int` | 1-based start line of the node (for `Finding.line_number`) |
-| `snippet` | `str` | The source slice for the node, trimmed/redacted as the check requires |
-| `text` | `str` | The decoded node text (e.g. the callee name, the description string) |
-| `kind` | `str` | Which query matched (e.g. `shell_call`, `tool_description`) — lets a check pick the right message/severity |
+| `callee` | `str` | Dotted/qualified name: `subprocess.run`, `os.system`, `exec`, `child_process.exec`, `spawn` |
+| `args` | `list[Argument]` | Positional arguments |
+| `keywords` | `dict[str, Argument]` | Named args (e.g. Python `shell=True`) |
+| `line` | `int` | 1-based start line |
+| `snippet` | `str` | Evidence slice (Principle V) |
 
-**Rule**: `line`/`snippet` come directly from real parser node positions (Principle V —
-evidence-grounded). `snippet` for `HARDCODED_SECRETS` is redacted by the existing
-`_redact` logic before it leaves the check.
+## Value object: `Argument`
 
-## Entity: `LanguageAdapter` (capability, not data)
+A normalized view of one argument, so checks ask *intent* not syntax.
 
-The behaviour each language provides to the analyzer. Python is served by the stdlib `ast`
-(existing code path); JS/TS by the tree-sitter adapter. Conceptually:
+| Field | Type | Meaning (Python ⇄ JS/TS) |
+|-------|------|--------------------------|
+| `is_array` | `bool` | `list`/`tuple` literal ⇄ array literal (the "safe arg-list" form) |
+| `is_constant_string` | `bool` | plain string literal, no interpolation |
+| `has_interpolation` | `bool` | f-string/`.format()`/concat ⇄ template literal with `${…}`/concat — the dangerous form |
+| `is_truthy_constant` | `bool` | resolves the `shell=True` style flag |
+| `referenced_names` | `set[str]` | identifiers used inside the argument (for taint) |
+| `text` | `str` | source text of the argument |
 
-| Capability | Python (`ast`) | JS/TS (tree-sitter) |
-|-----------|----------------|---------------------|
-| parse file → tree | `ast.parse` (raises → skip) | `Parser.parse` (error-tolerant) |
-| find calls by callee name | walk `ast.Call` | query `call_expression` |
-| string / template literals | `ast.Constant`/`JoinedStr` | `string` / `template_string` nodes |
-| comments excluded from matches | comments aren't in the AST | comment nodes are distinct → skip them |
-| tool definitions | `@mcp.tool` decorated `FunctionDef` | `server.tool(name, …)` / `tool(…)` call args |
-| node → (line, snippet) | `node.lineno` + source slice | node start point + byte slice |
+## Value object: `FunctionDef`
+
+What `PATH_TRAVERSAL` (param → sink taint) reasons over.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `name` | `str` | Function/method name |
+| `params` | `list[str]` | Parameter names (for path-like detection) |
+| `decorators` | `list[str]` | Dotted decorator names (Python `@mcp.tool`) |
+| `body_calls` | `list[CallSite]` | Calls inside this function's body |
+| `body_text` | `str` | Source of the body (validation-hint scan, comment-stripped by the check) |
+| `line` | `int` | 1-based start line |
+
+## Value object: `ToolDefinition`
+
+What `TOOL_POISONING` reasons over — unifies Python decorator-tools and JS/TS
+`server.tool(...)` registrations.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `name` | `str` | Tool name |
+| `description` | `str` | The text the model sees (Python: docstring; JS/TS: the description argument) |
+| `line` | `int` | 1-based start line |
+
+## Value object: `StringLiteral` / `Assignment`
+
+What `HARDCODED_SECRETS` reasons over (AST-scoped, so comments are excluded).
+
+| `StringLiteral` field | Type | Notes |
+|-----------------------|------|-------|
+| `value` | `str` | The literal's decoded value |
+| `line` | `int` | 1-based line |
+| `snippet` | `str` | Evidence (the check redacts before output) |
+
+| `Assignment` field | Type | Notes |
+|--------------------|------|-------|
+| `target_name` | `str` | Assigned identifier (e.g. `API_KEY`) |
+| `value` | `StringLiteral \| None` | The literal value, if the RHS is a string literal |
+| `value_is_env_lookup` | `bool` | RHS reads `os.environ`/`os.getenv`/`process.env`/dotenv → safe |
+| `line` | `int` | 1-based line |
 
 ## Reuse: `Finding`
 
-Unchanged. JS/TS findings differ only in which file/construct they point at:
+Unchanged. A finding produced from a `SourceModel` query carries the same `check_id` /
+`severity` / `owasp_mcp_ref` / `cwe_ref` regardless of language; only `file_path`,
+`line_number`, and `snippet` differ per file. Remediation wording may branch on
+`model.language` (e.g. `execFile`/`process.env` vs `subprocess`/`os.environ`).
 
-| Field | Value for a JS/TS finding |
-|-------|---------------------------|
-| `check_id` | the same id as the Python path (`CMD_INJECTION`, `PATH_TRAVERSAL`, `TOOL_POISONING`, `HARDCODED_SECRETS`) |
-| `severity` | per the existing rubric (e.g. `exec` + template-literal interpolation → `HIGH`/`CRITICAL` as today) |
-| `file_path` / `line_number` / `snippet` | from the matched `NodeMatch` |
-| `owasp_mcp_ref` / `cwe_ref` / `remediation` / `references` | same as the Python branch of that check, with JS/TS-appropriate remediation wording (`execFile`/`spawn` array, `process.env`, …) |
+## Check ↔ port mapping (the rewrite target — built AFTER the foundation review)
 
-## Check ↔ language coverage (goal state)
-
-| Check | Python | JS/TS (this feature) |
-|-------|--------|----------------------|
-| `CMD_INJECTION` | AST (already) | AST (upgrades the old line-regex) |
-| `PATH_TRAVERSAL` | AST (already) | AST (**new**) |
-| `TOOL_POISONING` | AST (already) | AST (**new**) |
-| `HARDCODED_SECRETS` | regex (already cross-language) | regex + AST string-literal scoping (FP reduction) |
+| Check | Port queries it will use |
+|-------|--------------------------|
+| `CMD_INJECTION` | `call_sites()` → match callee in danger set → inspect `Argument` (`is_array` safe; `has_interpolation`/`is_truthy_constant` shell flag → finding) |
+| `PATH_TRAVERSAL` | `functions()` → path-like `params` → taint via `Argument.referenced_names` over `body_calls` → file sink without validation hint in `body_text` |
+| `TOOL_POISONING` | `tool_definitions()` → run poisoning pattern families on `.description` |
+| `HARDCODED_SECRETS` | `assignments()` + `string_literals()` → known-key/entropy on literals, `value_is_env_lookup` is safe |

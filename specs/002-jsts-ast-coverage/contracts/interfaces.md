@@ -1,90 +1,91 @@
 # Phase 1 Contracts: First-class JavaScript/TypeScript analysis
 
-Two contracts: the **shared source-analysis API** (library, consumed by checks) and the
-**per-check JS/TS behaviour** (what each check must now do). The CLI contract is unchanged —
-`mcpfrisk scan <path>` already accepts JS/TS paths; this feature only changes what is found.
+**Architecture**: full Clean Architecture. One language-agnostic **`SourceModel` port**
+(domain layer) with two **adapters** (infrastructure layer): `PythonAstAdapter` and
+`TreeSitterAdapter`. The four checks (use-case layer) depend only on the port and never
+import `ast` or `tree_sitter`. The CLI contract is unchanged — `mcpfrisk scan <path>` already
+accepts JS/TS paths.
 
-## Contract 1: Shared source-tree analysis (`core/sourcetree`)
+```
+checks/*  ──depends-on──▶  core/sourcetree (SourceModel port)  ◀──implemented-by──  ast / tree-sitter
+   (use-cases)                       (domain port)                       (infra adapters)
+```
 
-Stable surface the checks call. Checks MUST go through this; they MUST NOT import
-`tree_sitter` directly (keeps the parser dependency in one place, Principle II/IV).
+## Contract 1: The `SourceModel` port (`core/sourcetree`)
+
+Stable surface every check calls. Checks MUST go through it; they MUST NOT import a parser
+directly (keeps both parsers in one place — Principles II/IV).
 
 ```python
 # core/sourcetree/__init__.py
-def analyze(path: Path) -> ParsedSource | None:
-    """Parse a JS/TS file into a ParsedSource.
-    Returns None for non-JS/TS files (caller handles those via the Python path).
-    Returns ParsedSource(ok=False) when the `jsts` extra/parser is unavailable —
-    never raises, never returns a 'clean' signal for an unparsed file."""
+def analyze(path: Path) -> SourceModel | None:
+    """Parse `path` into a language-neutral SourceModel.
+    Returns None for unsupported file types.
+    Returns a SourceModel with ok=False when the file's language is supported but its
+    parser is unavailable (e.g. JS/TS without the `jsts` extra) — never raises, never
+    signals 'clean'."""
 
 def jsts_available() -> bool:
-    """True if the `jsts` extra (tree-sitter + grammars) is importable.
-    Lets a check decide between its AST branch and a regex fallback / skip-notice."""
+    """True if the `jsts` extra (tree-sitter + grammars) is importable. Lets the scan
+    flow emit a one-time skip notice and lets CMD_INJECTION choose its regex fallback."""
 ```
 
 ```python
-# core/sourcetree/analyzer.py — query helpers used by checks
-class ParsedSource:
+# core/sourcetree/model.py  — the port + value objects (see data-model.md)
+class SourceModel(Protocol):
     path: Path
     language: SourceLanguage
-    text: bytes
     ok: bool
-
-    def calls_to(self, callee_names: set[str]) -> list[NodeMatch]:
-        """All call expressions whose callee resolves to one of `callee_names`
-        (handles `exec`, `child_process.exec`, `cp.exec` aliases pragmatically)."""
-
-    def string_arguments(self, match: NodeMatch) -> list[NodeMatch]:
-        """The string/template-literal arguments of a matched call, flagging which
-        contain substitution/concatenation (the dangerous form)."""
-
-    def tool_descriptions(self) -> list[NodeMatch]:
-        """Description/metadata strings of `server.tool(...)` / `tool(...)` registrations."""
-
-    def functions_with_params(self, name_hints: tuple[str, ...]) -> list[NodeMatch]:
-        """Functions/tool callbacks that declare a parameter whose name matches a hint
-        (e.g. path-like names), for the taint-style reachability check."""
-
-    def string_literals(self) -> list[NodeMatch]:
-        """All string/template literals (used to scope secret-scanning away from comments)."""
+    def call_sites(self) -> list[CallSite]: ...
+    def functions(self) -> list[FunctionDef]: ...
+    def tool_definitions(self) -> list[ToolDefinition]: ...
+    def string_literals(self) -> list[StringLiteral]: ...
+    def assignments(self) -> list[Assignment]: ...
 ```
 
-- **Error handling contract**: every method returns matches from the best-effort tree and
-  never raises on malformed input. A file the parser can't load at all surfaces as
-  `ParsedSource(ok=False)`.
-- **Evidence contract**: every `NodeMatch` carries a real 1-based `line` and a source
-  `snippet` (Principle V).
+- **Adapter contract**: each adapter (`python_ast.py`, `treesitter.py`) implements every
+  `SourceModel` query for its language, mapping its native tree onto the shared value objects.
+  Adding a third language later = a new adapter only; no check and no other adapter changes.
+- **Error tolerance**: queries never raise on malformed input. Python: a `SyntaxError` file
+  yields `ok=False` (mirrors today's behaviour). JS/TS: tree-sitter recovers, yields `ok=True`
+  with whatever parsed.
+- **Evidence**: every value object carries a real 1-based `line` and a `snippet` (Principle V).
 
-## Contract 2: Per-check JS/TS behaviour
+## Contract 2: Per-check obligations (after the foundation review)
 
-Each check keeps its single `check_id` and gains a JS/TS branch that delegates to Contract 1.
-`applies_to` is widened where needed so the check actually runs on JS/TS-only trees.
+Each check keeps its single `check_id` and is rewritten **once** against the port — no
+per-language branches inside the check. Severity stays per the existing rubric.
 
-| Check | New JS/TS obligation | Severity (must match Python rubric) |
-|-------|----------------------|-------------------------------------|
-| `CMD_INJECTION` | Flag `exec`/`execSync`/`child_process.exec`/`spawn(.../sh)` whose argument is a template literal with substitution or a concatenation of a parameter. **Replaces** the line-regex; gains multi-line detection (SC-003) and comment/string immunity (SC-004). | `HIGH` (template-literal interpolation); `CRITICAL` reserved as in Python |
-| `PATH_TRAVERSAL` | Flag a path-like tool/function parameter reaching `fs.*` / `open` / `path.join` with no visible `path.resolve`+containment / `realpath`. **New** for JS/TS. | `HIGH` |
-| `TOOL_POISONING` | Run the existing poisoning pattern families against `server.tool(...)` description/metadata strings. **New** for JS/TS. | `CRITICAL`/`HIGH` per pattern, as in Python |
-| `HARDCODED_SECRETS` | Keep regex, but only consider matches inside string-literal nodes (drops comment FPs); `process.env`/dotenv reads stay safe. | `CRITICAL`/`HIGH` as today |
+| Check | Port queries | New coverage |
+|-------|--------------|--------------|
+| `CMD_INJECTION` | `call_sites()` + `Argument` flags | JS/TS via the same code path (replaces the old line-regex; gains multi-line + comment/string immunity) |
+| `PATH_TRAVERSAL` | `functions()` + `body_calls` + `Argument.referenced_names` | JS/TS (**new**) |
+| `TOOL_POISONING` | `tool_definitions()` (`.description`) | JS/TS `server.tool(...)` (**new**) |
+| `HARDCODED_SECRETS` | `assignments()` + `string_literals()` | AST-scoped (drops comment FPs) across languages |
 
-**Skip / fallback contract** (when `jsts_available()` is `False`):
-- The scan prints **one** notice that JS/TS analysis needs `pip install mcpfrisk[jsts]`.
-- JS/TS files are not reported as clean — they are reported as skipped.
-- `CMD_INJECTION` MAY use its existing line-regex so the base install keeps today's coverage
-  (no regression). Other checks skip JS/TS in that mode.
+**Skip / fallback contract** (`jsts_available()` is `False`): the scan prints **one** notice
+that JS/TS needs `pip install mcpfrisk[jsts]`; JS/TS files are reported *skipped*, never
+clean; `CMD_INJECTION` MAY fall back to its current regex so the base install keeps today's
+coverage.
 
 ## Contract 3: Exclusions & determinism (unchanged conventions)
 
 - Excluded dirs/files stay the existing set (`node_modules`, `.venv`, `dist`, `build`,
-  `__pycache__`, …). Minified/vendored bundles are out of scope via these excludes (FR-008).
-- Same input → same findings, stable ordering (FR-009): iterate files in sorted order and
-  emit matches in source position order.
+  `__pycache__`, …); minified/vendored bundles are out of scope via these excludes (FR-008).
+- Same input → same findings, stable ordering (FR-009): files in sorted order, matches in
+  source-position order.
 
 ## Contract 4: Packaging
 
 - `pyproject.toml` gains an optional extra:
   `jsts = ["tree-sitter>=0.21", "tree-sitter-typescript", "tree-sitter-javascript"]`
-  (exact grammar packaging finalized in tasks; `tree-sitter-language-pack` is the fallback).
+  (`tree-sitter-language-pack` is the fallback grammar source).
 - Base/`dev` installs are unaffected; `dev` includes `jsts` so CI exercises the AST path.
-- CI runs the JS/TS tests with the `jsts` extra installed, and runs at least one job
-  asserting the **parser-absent** skip/fallback path (no crash, no false "clean").
+- CI runs the JS/TS tests with the extra installed **and** one job without it asserting the
+  skip/fallback path (no crash, no false "clean").
+
+## Foundation scope (this iteration, stop-for-review)
+
+Only the **port + both adapters + their tests** are built now (Phase 2 below). The four
+checks are **not** touched until the architecture is reviewed — the port is validated in
+isolation first, exactly so the later check rewrite is a mechanical mapping, not a redesign.
