@@ -55,9 +55,16 @@ def build_parser() -> argparse.ArgumentParser:
         "probe",
         help="Prüft einen LAUFENDEN MCP-Server dynamisch (Tier 2, z.B. AUTH_BOUNDARY).",
     )
-    probe_parser.add_argument(
-        "--server", type=str, required=True,
+    target_group = probe_parser.add_mutually_exclusive_group(required=True)
+    target_group.add_argument(
+        "--server", type=str, default=None,
         help="URL des laufenden MCP-HTTP-Endpunkts, z.B. http://localhost:8000/mcp",
+    )
+    target_group.add_argument(
+        "--stdio", type=str, default=None, metavar="COMMAND",
+        help="Startkommando eines stdio-MCP-Servers, z.B. --stdio \"python -m my_server\". "
+             "ACHTUNG: führt den Befehl aus (Code-Ausführung) -- nur gegen Server "
+             "richten, denen du vertraust bzw. die du gerade testest.",
     )
     probe_parser.add_argument(
         "--timeout", type=float, default=5.0,
@@ -152,8 +159,12 @@ def _warn_if_jsts_missing(target_path: Path) -> None:
 
 
 def _run_probe(args: argparse.Namespace) -> int:
+    # Genau eines von --server/--stdio ist gesetzt (mutually exclusive, required).
+    # Ein nacktes Kommando ohne http(s):// wird vom Transport-Factory als stdio
+    # erkannt; ein 'stdio:'-Präfix macht die Absicht im Report explizit.
+    target = args.server if args.server is not None else f"stdio:{args.stdio}"
     runner = DynamicRunner(timeout_s=args.timeout)
-    result = runner.run(args.server, skip_checks=set(args.skip))
+    result = runner.run(target, skip_checks=set(args.skip))
     print_dynamic_report(result)
 
     if args.json:
