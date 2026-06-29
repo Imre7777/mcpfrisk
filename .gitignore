@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing / Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# mcpfrisk-spezifisch: lokal generierte Scan-Reports nicht versionieren
+# (können Pfade/Snippets aus gescanntem Fremdcode enthalten)
+*.mcpfrisk-report.json
+/scan-output/
+
+# Falls .env-Dateien beim Testen gegen echte Server entstehen
+.env
+.env.local

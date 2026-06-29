@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package with dev dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run test suite
+        run: pytest tests/ -v --cov=mcpfrisk --cov-report=term-missing
+
+      # Dogfooding: mcpfrisk scannt seine eigenen Test-Fixtures und
+      # demonstriert in den CI-Logs, dass die Findings wie erwartet kommen.
+      # Das ist kein Ersatz für die pytest-Suite oben, sondern ein
+      # zusätzlicher Sichtbarkeits-Check (zeigt im CI-Log das, was ein
+      # Nutzer beim echten Einsatz auch sehen würde).
+      - name: Dogfood -- scan the vulnerable fixture (expected to fail)
+        run: |
+          mcpfrisk scan tests/fixtures/vulnerable_server.py --fail-on critical || true
+
+      - name: Dogfood -- scan the clean fixture (expected to pass)
+        run: |
+          mkdir -p /tmp/clean-only
+          cp tests/fixtures/clean_server.py /tmp/clean-only/
+          mcpfrisk scan /tmp/clean-only --fail-on high
