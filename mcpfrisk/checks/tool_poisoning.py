@@ -24,13 +24,13 @@ nutzt. Für Tier 2 könnte man hier optional einen LLM-Judge-Call ergänzen.
 """
 from __future__ import annotations
 
-import ast
 import re
 from pathlib import Path
 
 from mcpfrisk.core.base_check import BaseCheck
-from mcpfrisk.core.fs import rglob_or_file
+from mcpfrisk.core.fs import iter_source_files
 from mcpfrisk.core.models import Finding, Severity
+from mcpfrisk.core.sourcetree import SourceLanguage, analyze
 
 # Pattern-Familie 1: Pseudo-XML-Instruktions-Tags, die Modelle als
 # strukturierte Anweisung lesen (das exakte Invariant-Labs-Muster)
@@ -73,62 +73,30 @@ class ToolDescriptionPoisoningCheck(BaseCheck):
     )
 
     def applies_to(self, target_path: Path) -> bool:
-        return any(rglob_or_file(target_path, "*.py")) or any(
-            rglob_or_file(target_path, "*.[jt]s")
-        )
+        return bool(iter_source_files(target_path))
 
     def run(self, target_path: Path) -> list[Finding]:
+        """Findet Tool-Definitionen (Python @mcp.tool()-Funktionen via Docstring,
+        JS/TS server.tool(...)-Registrierungen via Beschreibungs-Argument) über
+        den SourceModel-Port und prüft den Text, der ans Modell geht."""
         findings: list[Finding] = []
-        for py_file in rglob_or_file(target_path, "*.py"):
-            if self._is_excluded(py_file):
+        for file_path in iter_source_files(target_path):
+            model = analyze(file_path)
+            if model is None or not model.ok:
                 continue
-            findings.extend(self._scan_python_tool_definitions(py_file))
-        return findings
-
-    @staticmethod
-    def _is_excluded(path: Path) -> bool:
-        excluded = {"node_modules", ".venv", "venv", "__pycache__"}
-        return any(part in excluded for part in path.parts)
-
-    def _scan_python_tool_definitions(self, file_path: Path) -> list[Finding]:
-        """Findet FastMCP-Style @mcp.tool()-Dekorierte Funktionen und
-        prüft deren Docstring (= die Tool-Description, die ans Modell geht)."""
-        findings = []
-        try:
-            source = file_path.read_text(encoding="utf-8", errors="ignore")
-            tree = ast.parse(source, filename=str(file_path))
-        except (SyntaxError, UnicodeDecodeError):
-            return findings
-
-        for node in ast.walk(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            if not self._looks_like_mcp_tool(node):
-                continue
-
-            docstring = ast.get_docstring(node) or ""
-            if not docstring:
-                continue
-
-            findings.extend(
-                self._check_text_for_poisoning(
-                    text=docstring,
-                    file_path=file_path,
-                    line_number=node.lineno,
-                    context=f"Docstring von Tool-Funktion '{node.name}'",
+            lang_label = "Python" if model.language is SourceLanguage.PYTHON else "JS/TS"
+            for tool in model.tool_definitions():
+                if not tool.description:
+                    continue
+                findings.extend(
+                    self._check_text_for_poisoning(
+                        text=tool.description,
+                        file_path=model.path,
+                        line_number=tool.line,
+                        context=f"Beschreibung von {lang_label}-Tool '{tool.name}'",
+                    )
                 )
-            )
         return findings
-
-    @staticmethod
-    def _looks_like_mcp_tool(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-        """Heuristik: hat die Funktion einen Decorator, der nach
-        @mcp.tool(), @server.tool(), o.ä. aussieht?"""
-        for decorator in node.decorator_list:
-            dec_str = ast.dump(decorator)
-            if "tool" in dec_str.lower():
-                return True
-        return False
 
     def _check_text_for_poisoning(
         self, text: str, file_path: Path, line_number: int, context: str

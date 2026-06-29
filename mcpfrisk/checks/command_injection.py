@@ -5,20 +5,28 @@ im MCP-Ökosystem (Stand 2026). Die meisten MCP-Server sind dünne Wrapper
 um CLI-Tools -- die Versuchung, exec()/subprocess.run() mit
 String-Interpolation aus User-Input zu füttern, ist groß.
 
-Dieser Check ist bewusst regex/AST-basiert und *nicht* perfekt --
-False Positives sind in Ordnung, False Negatives sind das Problem,
-das wir minimieren wollen (Security-Scanner-Grundsatz: lieber zu
-vorsichtig als zu nachlässig).
+Architektur: Der Check ist ein Use-Case über dem sprach-agnostischen
+SourceModel-Port (core/sourcetree). Er fragt `call_sites()` ab und bewertet
+deren Argumente -- für Python UND JS/TS über denselben Pfad. Den Parser
+(ast bzw. tree-sitter) sieht er nie. Fehlt das `jsts`-Extra, fällt der Check
+für JS/TS auf die bisherige Zeilen-Regex zurück, damit der Basis-Install
+seine Abdeckung behält.
 """
 from __future__ import annotations
 
-import ast
 import re
 from pathlib import Path
 
 from mcpfrisk.core.base_check import BaseCheck
-from mcpfrisk.core.fs import rglob_or_file
+from mcpfrisk.core.fs import iter_source_files
 from mcpfrisk.core.models import Finding, Severity
+from mcpfrisk.core.sourcetree import (
+    CallSite,
+    SourceLanguage,
+    SourceModel,
+    analyze,
+    jsts_available,
+)
 
 # Python: Funktionen, die bei String-Eingabe eine Shell aufmachen
 PY_DANGEROUS_CALLS = {
@@ -32,11 +40,16 @@ PY_DANGEROUS_CALLS = {
     "commands.getoutput",  # legacy
 }
 
-# JS/TS: Äquivalente
+# JS/TS: gefährliche Aufrufe per letztem Namenssegment (exec, execSync, spawn,
+# spawnSync). execFile/execFileSync sind die sicheren Varianten und bewusst NICHT
+# enthalten.
+JS_DANGEROUS_SEGMENTS = {"exec", "execSync", "spawn", "spawnSync"}
+
+# Fallback (nur wenn das jsts-Extra fehlt): die bisherigen Zeilen-Regexe.
 JS_DANGEROUS_PATTERNS = [
-    re.compile(r"exec(?:Async)?\s*\(\s*[`\"'].*\$\{"),     # exec(`cmd ${input}`)
+    re.compile(r"exec(?:Async)?\s*\(\s*[`\"'].*\$\{"),
     re.compile(r"execSync\s*\("),
-    re.compile(r"child_process\.exec\b(?!File)"),           # exec(), nicht execFile()
+    re.compile(r"child_process\.exec\b(?!File)"),
     re.compile(r"spawn\s*\(\s*[`\"']/bin/(sh|bash)"),
 ]
 
@@ -50,184 +63,165 @@ class CommandInjectionCheck(BaseCheck):
     )
 
     def applies_to(self, target_path: Path) -> bool:
-        return any(rglob_or_file(target_path, "*.py")) or any(
-            rglob_or_file(target_path, "*.[jt]s")
-        )
+        return bool(iter_source_files(target_path))
 
     def run(self, target_path: Path) -> list[Finding]:
         findings: list[Finding] = []
-        for py_file in rglob_or_file(target_path, "*.py"):
-            if self._is_excluded(py_file):
+        for file_path in iter_source_files(target_path):
+            if file_path.suffix.lower() != ".py" and not jsts_available():
+                findings.extend(self._scan_js_regex(file_path))
                 continue
-            findings.extend(self._scan_python_file(py_file))
-
-        for js_file in list(rglob_or_file(target_path, "*.js")) + list(
-            rglob_or_file(target_path, "*.ts")
-        ):
-            if self._is_excluded(js_file):
+            model = analyze(file_path)
+            if model is None or not model.ok:
                 continue
-            findings.extend(self._scan_js_file(js_file))
+            findings.extend(self._scan_model(model))
+        return findings
 
+    def _scan_model(self, model: SourceModel) -> list[Finding]:
+        findings: list[Finding] = []
+        for call in model.call_sites():
+            if not self._is_dangerous(model.language, call.callee):
+                continue
+            severity, reason = self._assess(model.language, call)
+            if severity is None:
+                continue
+            findings.append(self._make_finding(model, call, severity, reason))
         return findings
 
     @staticmethod
-    def _is_excluded(path: Path) -> bool:
-        excluded_dirs = {"node_modules", ".venv", "venv", "__pycache__", "dist", "build"}
-        return any(part in excluded_dirs for part in path.parts)
+    def _is_dangerous(language: SourceLanguage, callee: str) -> bool:
+        if not callee:
+            return False
+        if language is SourceLanguage.PYTHON:
+            return callee in PY_DANGEROUS_CALLS
+        return callee.rsplit(".", 1)[-1] in JS_DANGEROUS_SEGMENTS
 
-    def _scan_python_file(self, file_path: Path) -> list[Finding]:
-        findings = []
-        try:
-            source = file_path.read_text(encoding="utf-8", errors="ignore")
-            tree = ast.parse(source, filename=str(file_path))
-        except (SyntaxError, UnicodeDecodeError):
-            return findings
-
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-
-            call_name = self._get_call_name(node)
-            if call_name not in PY_DANGEROUS_CALLS:
-                continue
-
-            risk_level, reason = self._assess_python_call(node, call_name)
-            if risk_level is None:
-                continue  # z.B. subprocess.run(["ls", "-la"]) mit Liste -> sicher
-
-            snippet = self._get_snippet(source, node.lineno)
-            findings.append(
-                Finding(
-                    check_id=self.check_id,
-                    severity=risk_level,
-                    title=f"Potenzielle Command Injection via {call_name}()",
-                    description=reason,
-                    file_path=file_path,
-                    line_number=node.lineno,
-                    snippet=snippet,
-                    owasp_mcp_ref="MCP05",  # Command Injection
-                    cwe_ref="CWE-78",
-                    remediation=(
-                        "Verwende eine Argument-Liste statt String-Interpolation "
-                        "(z.B. subprocess.run(['cmd', arg]) statt shell=True mit "
-                        "f-strings). Validiere Input gegen eine Allowlist, "
-                        "bevor er in einen Systemaufruf fließt."
-                    ),
-                    references=[
-                        "https://owasp.org/www-project-mcp-top-10/",
-                        "https://cwe.mitre.org/data/definitions/78.html",
-                    ],
-                )
-            )
-        return findings
-
-    @staticmethod
-    def _get_call_name(node: ast.Call) -> str | None:
-        """Extrahiert z.B. 'subprocess.run' aus einem Call-Node."""
-        func = node.func
-        if isinstance(func, ast.Attribute):
-            if isinstance(func.value, ast.Name):
-                return f"{func.value.id}.{func.attr}"
-        elif isinstance(func, ast.Name):
-            return func.id
-        return None
-
-    def _assess_python_call(
-        self, node: ast.Call, call_name: str
+    def _assess(
+        self, language: SourceLanguage, call: CallSite
     ) -> tuple[Severity | None, str]:
-        """Bewertet, ob ein konkreter Call riskant aussieht.
+        """Sprach-bewusste Risiko-Policy über den einheitlichen Argument-Flags.
 
-        Heuristik:
-        - shell=True + nicht-konstanter String-Arg -> CRITICAL
-        - String-Arg (statt Liste) ohne shell=True -> MEDIUM (still riskant je Plattform)
-        - Liste als erstes Arg, kein shell=True -> kein Finding
+        Gemeinsam beiden Sprachen: ein Array/Listen-Literal als erstes Argument
+        ist die sichere Form, Interpolation (f-string/Template-Literal/Konkat)
+        ist die gefährliche. Sprach-spezifisch ist nur, *wie* die Shell
+        aktiviert wird (Python: ``shell=True``; JS: exec() öffnet implizit eine
+        Shell). Das Parsing ist identisch -- nur die Bewertung kennt die Sprache.
         """
-        has_shell_true = any(
-            kw.arg == "shell"
-            and isinstance(kw.value, ast.Constant)
-            and kw.value.value is True
-            for kw in node.keywords
-        )
+        if not call.args:
+            return None, ""
+        first = call.args[0]
 
-        if not node.args:
+        if language is SourceLanguage.PYTHON:
+            shell = call.keywords.get("shell")
+            shell_true = shell is not None and shell.is_truthy_constant
+            if first.is_array and not shell_true:
+                return None, ""
+            if shell_true:
+                if first.is_constant_string:
+                    return (
+                        Severity.MEDIUM,
+                        f"{call.callee} mit shell=True und Konstante -- prüfen, ob "
+                        "der String wirklich nie aus User-Input zusammengesetzt wird.",
+                    )
+                return (
+                    Severity.CRITICAL,
+                    f"{call.callee} mit shell=True und nicht-konstantem Befehl "
+                    "(f-string, .format(), String-Konkatenation). Das ist der "
+                    "dominante Pattern hinter MCP-RCE-CVEs.",
+                )
+            if first.has_interpolation:
+                return (
+                    Severity.HIGH,
+                    f"{call.callee} erhält einen interpolierten String als Befehl. "
+                    "Auch ohne shell=True können Argumente injiziert werden, wenn "
+                    "sie nicht als separate Listenelemente übergeben werden.",
+                )
             return None, ""
 
-        first_arg = node.args[0]
-        first_arg_is_list = isinstance(first_arg, (ast.List, ast.Tuple))
-        first_arg_is_constant_str = (
-            isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str)
-        )
-
-        if first_arg_is_list and not has_shell_true:
-            return None, ""  # sicherer Standardfall
-
-        if has_shell_true:
-            if first_arg_is_constant_str:
-                # Konstanter String, aber evtl. mit f-string/format gebaut wäre
-                # bereits als JoinedStr erkannt worden -- hier ist es ein reiner
-                # String-Literal ohne Interpolation, also geringeres Risiko.
-                return (
-                    Severity.MEDIUM,
-                    f"{call_name} mit shell=True und Konstante -- prüfen, ob "
-                    "der String wirklich nie aus User-Input zusammengesetzt wird.",
-                )
-            return (
-                Severity.CRITICAL,
-                f"{call_name} mit shell=True und nicht-konstantem Befehl "
-                "(z.B. f-string, .format(), String-Konkatenation). "
-                "Das ist der dominante Pattern hinter MCP-RCE-CVEs.",
-            )
-
-        if isinstance(first_arg, ast.JoinedStr):  # f-string ohne shell=True
+        # JS/TS: exec()/execSync()/spawn() öffnen eine Shell, execFile() nicht.
+        if first.is_array or first.is_constant_string:
+            return None, ""
+        if first.has_interpolation:
             return (
                 Severity.HIGH,
-                f"{call_name} erhält einen f-string als Befehl. Auch ohne "
-                "shell=True können einzelne Argumente injiziert werden, wenn "
-                "sie nicht als separate Listenelemente übergeben werden.",
+                f"{call.callee}() mit Template-Literal/String-Konkatenation als "
+                "Befehl. child_process.execFile(cmd, [args]) ist die sichere Form.",
             )
-
+        if first.referenced_names:
+            return (
+                Severity.HIGH,
+                f"{call.callee}() erhält eine Variable als Shell-Befehl. Wenn sie "
+                "(teilweise) aus Eingaben stammt, ist das Command Injection.",
+            )
         return None, ""
 
-    def _scan_js_file(self, file_path: Path) -> list[Finding]:
-        findings = []
+    def _make_finding(
+        self, model: SourceModel, call: CallSite, severity: Severity, reason: str
+    ) -> Finding:
+        is_python = model.language is SourceLanguage.PYTHON
+        if is_python:
+            remediation = (
+                "Verwende eine Argument-Liste statt String-Interpolation "
+                "(z.B. subprocess.run(['cmd', arg]) statt shell=True mit "
+                "f-strings). Validiere Input gegen eine Allowlist, bevor er in "
+                "einen Systemaufruf fließt."
+            )
+        else:
+            remediation = (
+                "Nutze child_process.execFile(cmd, [args]) statt exec(`${cmd}`). "
+                "Niemals Nutzereingaben direkt in Shell-Strings interpolieren."
+            )
+        title = (
+            f"Potenzielle Command Injection via {call.callee}()"
+            if is_python
+            else "Potenzielle Command Injection (JS/TS)"
+        )
+        return Finding(
+            check_id=self.check_id,
+            severity=severity,
+            title=title,
+            description=reason,
+            file_path=model.path,
+            line_number=call.line,
+            snippet=call.snippet,
+            owasp_mcp_ref="MCP05",
+            cwe_ref="CWE-78",
+            remediation=remediation,
+            references=[
+                "https://owasp.org/www-project-mcp-top-10/",
+                "https://cwe.mitre.org/data/definitions/78.html",
+            ],
+        )
+
+    def _scan_js_regex(self, file_path: Path) -> list[Finding]:
+        """Fallback ohne das jsts-Extra: die bisherige Zeilen-Heuristik."""
+        findings: list[Finding] = []
         try:
             lines = file_path.read_text(encoding="utf-8", errors="ignore").splitlines()
-        except UnicodeDecodeError:
+        except OSError:
             return findings
-
         for i, line in enumerate(lines, start=1):
-            for pattern in JS_DANGEROUS_PATTERNS:
-                if pattern.search(line):
-                    findings.append(
-                        Finding(
-                            check_id=self.check_id,
-                            severity=Severity.HIGH,
-                            title="Potenzielle Command Injection (JS/TS)",
-                            description=(
-                                "exec()/execSync() mit Template-Literal oder "
-                                "Shell-Aufruf gefunden. child_process.execFile() "
-                                "mit Argument-Array ist die sichere Alternative."
-                            ),
-                            file_path=file_path,
-                            line_number=i,
-                            snippet=line.strip(),
-                            owasp_mcp_ref="MCP05",
-                            cwe_ref="CWE-78",
-                            remediation=(
-                                "Nutze child_process.execFile(cmd, [args]) statt "
-                                "exec(`${cmd}`). Niemals Nutzereingaben direkt in "
-                                "Shell-Strings interpolieren."
-                            ),
-                            references=[
-                                "https://owasp.org/www-project-mcp-top-10/"
-                            ],
-                        )
+            if any(p.search(line) for p in JS_DANGEROUS_PATTERNS):
+                findings.append(
+                    Finding(
+                        check_id=self.check_id,
+                        severity=Severity.HIGH,
+                        title="Potenzielle Command Injection (JS/TS)",
+                        description=(
+                            "exec()/execSync() mit Template-Literal oder Shell-Aufruf "
+                            "gefunden (Regex-Fallback ohne jsts-Extra)."
+                        ),
+                        file_path=file_path,
+                        line_number=i,
+                        snippet=line.strip(),
+                        owasp_mcp_ref="MCP05",
+                        cwe_ref="CWE-78",
+                        remediation=(
+                            "Nutze child_process.execFile(cmd, [args]) statt "
+                            "exec(`${cmd}`). Für volle AST-Genauigkeit: "
+                            "pip install mcpfrisk[jsts]."
+                        ),
+                        references=["https://owasp.org/www-project-mcp-top-10/"],
                     )
+                )
         return findings
-
-    @staticmethod
-    def _get_snippet(source: str, lineno: int) -> str:
-        lines = source.splitlines()
-        if 0 < lineno <= len(lines):
-            return lines[lineno - 1].strip()
-        return ""
