@@ -14,6 +14,14 @@ import pytest
 from mcpfrisk.core.sourcetree import analyze, jsts_available
 from mcpfrisk.core.sourcetree.model import SourceLanguage
 
+# Tests, die den echten JS/TS-Parser brauchen, werden ohne das `jsts`-Extra
+# übersprungen (nicht als Fehler gewertet) -- der CI-Job `test-without-jsts`
+# installiert tree-sitter bewusst nicht. Python- und Parser-absent-Tests laufen
+# weiterhin immer.
+requires_jsts = pytest.mark.skipif(
+    not jsts_available(), reason="jsts-Extra (tree-sitter) nicht installiert"
+)
+
 
 def _write(tmp_path, name: str, content: str):
     p = tmp_path / name
@@ -88,6 +96,7 @@ def test_call_sites_python_classifies_args(tmp_path):
     assert interp.keywords["shell"].is_truthy_constant
 
 
+@requires_jsts
 def test_call_sites_typescript_classifies_args(tmp_path):
     m = analyze(_write(tmp_path, "x.ts", TS_CMD))
     assert m is not None and m.ok and m.language == SourceLanguage.TYPESCRIPT
@@ -108,6 +117,7 @@ def test_tool_definitions_python_docstring(tmp_path):
     assert any("<IMPORTANT>" in t.description for t in tools)
 
 
+@requires_jsts
 def test_tool_definitions_typescript_server_tool(tmp_path):
     m = analyze(_write(tmp_path, "x.ts", TS_TOOL))
     tools = m.tool_definitions()
@@ -124,6 +134,7 @@ def test_functions_python_params_and_body_calls(tmp_path):
     assert any(c.callee == "open" for c in fn.body_calls)
 
 
+@requires_jsts
 def test_functions_typescript_params_and_body_calls(tmp_path):
     m = analyze(_write(tmp_path, "x.ts", TS_PATH))
     fn = next(f for f in m.functions() if f.name == "readFile")
@@ -156,6 +167,7 @@ def test_taint_linkage_python(tmp_path):
     assert any("full" in arg.referenced_names for arg in sink.args)
 
 
+@requires_jsts
 def test_taint_linkage_typescript(tmp_path):
     m = analyze(_write(tmp_path, "x.ts", TS_TAINT))
     fn = next(f for f in m.functions() if f.name == "readTool")
@@ -179,6 +191,7 @@ def test_assignments_python_secret_and_env(tmp_path):
     assert any("sk-ant-" in s.value for s in m.string_literals())
 
 
+@requires_jsts
 def test_assignments_typescript_secret_and_env(tmp_path):
     m = analyze(_write(tmp_path, "x.ts", TS_SEC))
     by_name = {a.target_name: a for a in m.assignments()}
@@ -198,6 +211,7 @@ def test_malformed_python_is_not_ok(tmp_path):
     assert m.call_sites() == []
 
 
+@requires_jsts
 def test_malformed_typescript_recovers(tmp_path):
     m = analyze(_write(tmp_path, "bad.ts", "function ( { exec(`unterminated"))
     assert m is not None and m.ok is True
