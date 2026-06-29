@@ -40,7 +40,26 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+Verify the plan against the McpFrisk Constitution (`.specify/memory/constitution.md`):
+
+- [ ] **I. Test-First (NON-NEGOTIABLE)**: Plan writes failing tests first, gets them
+      approved, confirms RED before implementation. No exceptions.
+- [ ] **II. Plugin Isolation**: New checks are self-contained `BaseCheck` subclasses;
+      adding one touches only a new file + one `checks/registry.py` entry, never an
+      existing check file.
+- [ ] **III. False Positives over False Negatives**: Ambiguous heuristics flag rather
+      than stay silent; every finding has a human-judgeable description.
+- [ ] **IV. Zero Unnecessary Dependencies (Tier 1)**: Static checks rely on the stdlib
+      (`ast`, `re`, `pathlib`); any new dependency is justified (Tier 2 / `mcp` SDK only).
+- [ ] **V. Evidence-Grounded Findings**: Every finding cites file + line + snippet;
+      severity follows the CRITICAL/HIGH/MEDIUM rubric.
+- [ ] **VI. Paired Fixture Testing (NON-NEGOTIABLE)**: Detection logic ships with BOTH
+      a vulnerable-fixture and a clean-fixture test.
+- [ ] **VII. Security-Research Currency**: New check classes are preceded by a fresh
+      CVE / OWASP MCP Top 10 research pass.
+
+Any unchecked gate MUST be justified in the Complexity Tracking table below or the
+plan MUST be revised.
 
 ## Project Structure
 
