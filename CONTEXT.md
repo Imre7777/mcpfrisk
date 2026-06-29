@@ -7,6 +7,13 @@ Code entstanden ist. Lies dieses Dokument **vollständig**, bevor du
 Code änderst — viele Designentscheidungen sind nicht offensichtlich aus
 dem Code allein ersichtlich.
 
+> **Siehe auch [`MARKET-RESEARCH.md`](./MARKET-RESEARCH.md)** für die
+> ausführliche Wettbewerbsanalyse (direkte Konkurrenten wie `agent-audit`
+> und `mcp-sec-audit`, die akademische Benchmark-Landschaft, und eine
+> priorisierte Differenzierungsstrategie). Abschnitt 6 und 7 davon sollten
+> die Roadmap in diesem Dokument (Abschnitt 6) ergänzen bzw. teilweise
+> neu priorisieren.
+
 ---
 
 ## 1. Was ist das Projekt?
