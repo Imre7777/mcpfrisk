@@ -6,11 +6,12 @@ Das hält core/runner.py komplett unverändert, wenn das Tool von 4 auf
 """
 from __future__ import annotations
 
+from mcpfrisk.checks.auth_boundary import AuthBoundaryCheck
 from mcpfrisk.checks.command_injection import CommandInjectionCheck
 from mcpfrisk.checks.hardcoded_secrets import HardcodedSecretsCheck
 from mcpfrisk.checks.path_traversal import PathTraversalCheck
 from mcpfrisk.checks.tool_poisoning import ToolDescriptionPoisoningCheck
-from mcpfrisk.core.base_check import BaseCheck
+from mcpfrisk.core.base_check import BaseCheck, BaseDynamicCheck
 
 # Statische Checks: laufen direkt gegen den Quellcode, kein Server nötig.
 STATIC_CHECKS: list[type[BaseCheck]] = [
@@ -20,10 +21,10 @@ STATIC_CHECKS: list[type[BaseCheck]] = [
     ToolDescriptionPoisoningCheck,
 ]
 
-# Platzhalter für Tier-2-Checks (dynamisch, brauchen laufenden Server).
-# Sobald implementiert: hier eintragen, in core/dynamic_runner.py verdrahten.
-DYNAMIC_CHECKS: list[type[BaseCheck]] = [
-    # AuthBoundaryCheck,
+# Tier-2-Checks (dynamisch, brauchen laufenden Server), ausgeführt via
+# core/dynamic_runner.py. Neue dynamische Checks: hier eintragen.
+DYNAMIC_CHECKS: list[type[BaseDynamicCheck]] = [
+    AuthBoundaryCheck,
     # RbacCrossTenantCheck,
     # SchemaFuzzingCheck,
     # SsrfCheck,
@@ -33,3 +34,7 @@ DYNAMIC_CHECKS: list[type[BaseCheck]] = [
 
 def get_all_static_checks() -> list[BaseCheck]:
     return [check_cls() for check_cls in STATIC_CHECKS]
+
+
+def get_all_dynamic_checks() -> list[BaseDynamicCheck]:
+    return [check_cls() for check_cls in DYNAMIC_CHECKS]

@@ -83,3 +83,101 @@ class ScanResult:
 
     def sorted_findings(self) -> list[Finding]:
         return sorted(self.findings, key=lambda f: SEVERITY_ORDER[f.severity])
+
+
+# ---------------------------------------------------------------------------
+# Tier 2 (dynamische Checks): Modelle für das Prüfen eines laufenden Servers.
+# ---------------------------------------------------------------------------
+
+
+class CredentialCondition(str, Enum):
+    """Mit welchem Credential-Zustand eine Probe gesendet wird."""
+
+    NONE = "none"        # gar kein Authorization-Header
+    INVALID = "invalid"  # syntaktisch vorhanden, aber offensichtlich ungültig
+    VALID = "valid"      # echtes Credential (reserviert, in v1 nicht genutzt)
+
+
+class BoundaryOutcome(str, Enum):
+    """Verdikt einer Probe bzw. (aggregiert) des Servers."""
+
+    ENFORCED = "enforced"            # Server lehnt ab (401/403) -> kein Finding
+    NOT_ENFORCED = "not_enforced"    # Server beantwortet die Anfrage -> Finding
+    INCONCLUSIVE = "inconclusive"    # nicht erreichbar/Timeout/Crash/stdio -> kein Pass, kein Finding
+
+
+@dataclass
+class AuthProbe:
+    """Ein einzelner Versuch gegen den Server."""
+
+    operation: str                  # z.B. "tools/list"
+    condition: CredentialCondition
+    outcome: BoundaryOutcome
+    observed: str                   # kurze, secret-bereinigte Zusammenfassung der Antwort
+
+    def to_dict(self) -> dict:
+        return {
+            "operation": self.operation,
+            "condition": self.condition.value,
+            "outcome": self.outcome.value,
+            "observed": self.observed,
+        }
+
+
+@dataclass
+class BoundaryResult:
+    """Aggregiertes Verdikt für einen Ziel-Server, plus die Belege (Probes)."""
+
+    target: str
+    check_id: str = ""
+    probes: list[AuthProbe] = field(default_factory=list)
+    outcome: BoundaryOutcome = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.outcome = self._aggregate()
+
+    def _aggregate(self) -> BoundaryOutcome:
+        # Worst-case gewinnt (Prinzip III: lieber Finding als stiller Pass).
+        if any(p.outcome == BoundaryOutcome.NOT_ENFORCED for p in self.probes):
+            return BoundaryOutcome.NOT_ENFORCED
+        if self.probes and all(p.outcome == BoundaryOutcome.ENFORCED for p in self.probes):
+            return BoundaryOutcome.ENFORCED
+        return BoundaryOutcome.INCONCLUSIVE
+
+    def failing_probe(self) -> AuthProbe | None:
+        for p in self.probes:
+            if p.outcome == BoundaryOutcome.NOT_ENFORCED:
+                return p
+        return None
+
+    def to_dict(self) -> dict:
+        return {
+            "target": self.target,
+            "check_id": self.check_id,
+            "outcome": self.outcome.value,
+            "probes": [p.to_dict() for p in self.probes],
+        }
+
+
+@dataclass
+class DynamicScanResult:
+    """Gesamtergebnis eines dynamischen Scans (analog zu ScanResult)."""
+
+    target: str
+    findings: list[Finding] = field(default_factory=list)
+    checks_run: list[str] = field(default_factory=list)
+    checks_inconclusive: list[str] = field(default_factory=list)
+    boundary_results: list[BoundaryResult] = field(default_factory=list)
+
+    def add(self, findings: list[Finding]) -> None:
+        self.findings.extend(findings)
+
+    def by_severity(self, severity: Severity) -> list[Finding]:
+        return [f for f in self.findings if f.severity == severity]
+
+    def has_blocking_findings(self, fail_on: Severity = Severity.HIGH) -> bool:
+        threshold = SEVERITY_ORDER[fail_on]
+        return any(SEVERITY_ORDER[f.severity] <= threshold for f in self.findings)
+
+    def sorted_findings(self) -> list[Finding]:
+        return sorted(self.findings, key=lambda f: SEVERITY_ORDER[f.severity])

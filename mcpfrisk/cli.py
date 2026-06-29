@@ -12,8 +12,14 @@ import argparse
 import sys
 from pathlib import Path
 
+from mcpfrisk.core.dynamic_runner import DynamicRunner
 from mcpfrisk.core.models import Severity
-from mcpfrisk.core.report import print_terminal_report, write_json_report
+from mcpfrisk.core.report import (
+    print_dynamic_report,
+    print_terminal_report,
+    write_dynamic_json_report,
+    write_json_report,
+)
 from mcpfrisk.core.runner import run_static_scan
 
 
@@ -39,6 +45,32 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument(
         "--skip", type=str, nargs="*", default=[],
         help="Check-IDs, die übersprungen werden sollen, z.B. --skip TOOL_POISONING",
+    )
+
+    probe_parser = subparsers.add_parser(
+        "probe",
+        help="Prüft einen LAUFENDEN MCP-Server dynamisch (Tier 2, z.B. AUTH_BOUNDARY).",
+    )
+    probe_parser.add_argument(
+        "--server", type=str, required=True,
+        help="URL des laufenden MCP-HTTP-Endpunkts, z.B. http://localhost:8000/mcp",
+    )
+    probe_parser.add_argument(
+        "--timeout", type=float, default=5.0,
+        help="Maximale Wartezeit pro Anfrage in Sekunden (Default: 5).",
+    )
+    probe_parser.add_argument(
+        "--fail-on", type=str, default="high",
+        choices=[s.value for s in Severity],
+        help="Ab welchem Severity-Level der Exit-Code != 0 sein soll (Default: high).",
+    )
+    probe_parser.add_argument(
+        "--json", type=Path, default=None,
+        help="Schreibt zusätzlich einen JSON-Report an den angegebenen Pfad.",
+    )
+    probe_parser.add_argument(
+        "--skip", type=str, nargs="*", default=[],
+        help="Check-IDs, die übersprungen werden sollen, z.B. --skip AUTH_BOUNDARY",
     )
 
     return parser
@@ -68,6 +100,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "scan":
         return _run_scan(args)
+    if args.command == "probe":
+        return _run_probe(args)
 
     parser.print_help()
     return 1
@@ -92,6 +126,28 @@ def _run_scan(args: argparse.Namespace) -> int:
         return 1
 
     print("\n✅ Build markiert als PASSED.")
+    return 0
+
+
+def _run_probe(args: argparse.Namespace) -> int:
+    runner = DynamicRunner(timeout_s=args.timeout)
+    result = runner.run(args.server, skip_checks=set(args.skip))
+    print_dynamic_report(result)
+
+    if args.json:
+        write_dynamic_json_report(result, args.json)
+        print(f"JSON-Report geschrieben nach: {args.json}")
+
+    fail_on = Severity(args.fail_on)
+    if result.has_blocking_findings(fail_on=fail_on):
+        print(f"\n❌ Build markiert als FAILED (Findings >= {fail_on.value.upper()} gefunden).")
+        return 1
+
+    # INCONCLUSIVE zählt bewusst NICHT als Fehler -- aber auch nicht als Pass.
+    if result.checks_run:
+        print("\n✅ Build markiert als PASSED.")
+    else:
+        print("\nℹ Kein durchsetzbares Urteil (alle Checks inconclusive) -- kein Fehler, aber kein Pass.")
     return 0
 
 

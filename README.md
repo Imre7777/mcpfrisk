@@ -8,7 +8,8 @@ beim Endnutzer prüfen, richtet sich McpFrisk an **Server-Autoren**.
 > enthält die vollständige Architektur-Begründung, bekannte Bugs/Lessons
 > Learned, die Sicherheits-Recherche hinter den Checks, und die Anleitung
 > zum Einrichten von [GitHub Spec-Kit](https://github.com/github/spec-kit)
-> für die weitere Entwicklung (Abschnitt 9).
+> für die weitere Entwicklung (Abschnitt 9). Für die Wettbewerbslage und
+> Differenzierungsstrategie siehe [`MARKET-RESEARCH.md`](./MARKET-RESEARCH.md).
 
 ## Installation
 
@@ -55,14 +56,31 @@ Jeder Check ist eine eigenständige Klasse unter `mcpfrisk/checks/`,
 registriert in `checks/registry.py`. Neue Checks hinzufügen heißt: neue
 Datei + einen Eintrag in der Registry, kein bestehender Code wird berührt.
 
-## Roadmap: Tier 2 (dynamisch, braucht laufenden Server)
+## Tier 2 (dynamisch, braucht laufenden Server)
 
-Diese brauchen eine echte Verbindung zum MCP-Server (stdio/HTTP) statt
-nur den Quellcode zu lesen. Architektur dafür ist vorbereitet
-(`BaseDynamicCheck` in `core/base_check.py`), aber noch nicht implementiert:
+Diese brauchen eine echte Verbindung zum MCP-Server (HTTP) statt nur den
+Quellcode zu lesen. Ausgeführt über den `probe`-Befehl gegen einen
+**laufenden** Server:
 
-- **AUTH_BOUNDARY** — Requests ohne/mit falschem Token; prüft ob Server
-  wirklich 401/403 liefert statt durchzulassen
+```bash
+# Prüft, ob der Server unauthentifizierte/ungültige Anfragen ablehnt (401/403)
+mcpfrisk probe --server http://localhost:8000/mcp
+
+# Mit Timeout, JSON-Report und CI-Gate
+mcpfrisk probe --server http://localhost:8000/mcp --timeout 5 --json probe.json --fail-on high
+```
+
+Ein nicht erreichbarer/timeoutender/stdio-Server wird als *inconclusive*
+gemeldet — weder Pass noch Finding, und niemals stillschweigend als „sicher".
+
+**Implementiert:**
+
+- **AUTH_BOUNDARY** ✅ — sendet Anfragen ohne/mit falschem Token und prüft,
+  ob der Server wirklich 401/403 liefert statt durchzulassen (stdlib-only,
+  keine externe Abhängigkeit)
+
+**Geplant** (Architektur via `BaseDynamicCheck`/`DynamicRunner` vorhanden):
+
 - **RBAC_CROSS_TENANT** — simuliert mehrere Rollen, prüft auf
   Namespace-Leckage zwischen Tools (z.B. Student/Teacher-Trennung)
 - **SCHEMA_FUZZING** — malformed/oversized Parameter, prüft auf Crashes

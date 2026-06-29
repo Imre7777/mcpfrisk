@@ -28,8 +28,10 @@ classifiers = [
 # Bewusst leer: Tier 1 (statische Checks) braucht keine externen Pakete,
 # nur die Python-Standardbibliothek (ast, re, pathlib). Das hält die
 # Installation trivial und die Angriffsfläche durch eigene Dependencies
-# klein -- passend für ein Security-Tool. Tier 2 (dynamische Checks)
-# wird vermutlich `mcp`/`httpx` o.ä. brauchen; dann hier ergänzen.
+# klein -- passend für ein Security-Tool. Auch der erste Tier-2-Check
+# (AUTH_BOUNDARY) kommt mit stdlib `urllib` aus -- noch keine externe
+# Abhängigkeit nötig. Falls ein künftiger dynamischer Check das `mcp`-SDK
+# o.ä. zwingend braucht: als optionales Extra ergänzen, nicht als Pflicht.
 dependencies = []
 
 [project.optional-dependencies]

@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from mcpfrisk.core.models import ScanResult, Severity
+from mcpfrisk.core.models import BoundaryOutcome, DynamicScanResult, ScanResult, Severity
 
 SEVERITY_ICONS = {
     Severity.CRITICAL: "🔴",
@@ -58,6 +58,69 @@ def print_terminal_report(result: ScanResult) -> None:
 
     print("\n" + "-" * 70)
     print(f"\nGesamt: {len(findings)} Finding(s)\n")
+
+
+def print_dynamic_report(result: DynamicScanResult) -> None:
+    """Terminal-Ausgabe für einen dynamischen (Tier-2-)Scan."""
+    findings = result.sorted_findings()
+
+    print(f"\nMcpFrisk (dynamisch) -- Probe von {result.target}\n")
+    print(f"Checks ausgeführt: {', '.join(result.checks_run) or '(keine)'}")
+    if result.checks_inconclusive:
+        print(f"Checks ohne Urteil (inconclusive): {', '.join(result.checks_inconclusive)}")
+    print()
+
+    if findings:
+        counts = {sev: len(result.by_severity(sev)) for sev in Severity}
+        summary = "  ".join(
+            f"{SEVERITY_ICONS[sev]} {sev.value.upper()}: {counts[sev]}"
+            for sev in Severity
+            if counts[sev] > 0
+        )
+        print(f"Zusammenfassung: {summary}\n")
+        print("-" * 70)
+        for finding in findings:
+            icon = SEVERITY_ICONS[finding.severity]
+            print(f"\n{icon} [{finding.severity.value.upper()}] {finding.title}")
+            if finding.owasp_mcp_ref:
+                print(f"   📋 OWASP MCP Top 10: {finding.owasp_mcp_ref}  |  CWE: {finding.cwe_ref or '-'}")
+            print(f"   {finding.description}")
+            if finding.snippet:
+                print(f"   > {finding.snippet}")
+            if finding.remediation:
+                print(f"   💡 Fix: {finding.remediation}")
+        print("\n" + "-" * 70)
+        print(f"\nGesamt: {len(findings)} Finding(s)\n")
+    elif result.checks_run:
+        # Mindestens ein Check kam zu einem Urteil und fand nichts.
+        print("✅ Keine AUTH_BOUNDARY-Findings.\n")
+
+    _print_inconclusive_details(result)
+
+
+def _print_inconclusive_details(result: DynamicScanResult) -> None:
+    inconclusive = [
+        b for b in result.boundary_results if b.outcome == BoundaryOutcome.INCONCLUSIVE
+    ]
+    if not inconclusive:
+        return
+    print("Hinweise (inconclusive -- weder Pass noch Finding):")
+    for boundary in inconclusive:
+        reasons = "; ".join(p.observed for p in boundary.probes) or "kein Ergebnis"
+        print(f"  ℹ {boundary.check_id} @ {boundary.target}: {reasons}")
+    print()
+
+
+def write_dynamic_json_report(result: DynamicScanResult, output_path: Path) -> None:
+    data = {
+        "target": result.target,
+        "checks_run": result.checks_run,
+        "checks_inconclusive": result.checks_inconclusive,
+        "findings": [f.to_dict() for f in result.sorted_findings()],
+        "boundary_results": [b.to_dict() for b in result.boundary_results],
+        "summary": {sev.value: len(result.by_severity(sev)) for sev in Severity},
+    }
+    output_path.write_text(json.dumps(data, indent=2, ensure_ascii=False))
 
 
 def write_json_report(result: ScanResult, output_path: Path) -> None:
