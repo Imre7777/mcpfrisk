@@ -24,6 +24,27 @@ Ohne Installation direkt ausführbar:
 python3 -m mcpfrisk.cli scan ./pfad/zum/server
 ```
 
+### JavaScript/TypeScript-Unterstützung (optionales Extra)
+
+Der Basis-Install bleibt bewusst abhängigkeitsfrei (nur Python-Standardbib).
+Für **vollwertige, parser-basierte JS/TS-Analyse** (gleiche Tiefe wie bei
+Python) das `jsts`-Extra installieren:
+
+```bash
+pip install -e ".[jsts]"
+```
+
+Damit analysieren alle Checks `.js/.mjs/.cjs/.jsx` und `.ts/.mts/.cts/.tsx`
+über einen echten AST (tree-sitter) statt Zeilen-Regex — mehrzeilen-fest und
+immun gegen Treffer in Kommentaren/Strings. **Ohne** das Extra werden JS/TS-
+Dateien sauber übersprungen (nie fälschlich als „clean" gewertet);
+`CMD_INJECTION` fällt auf eine einfache Regex-Heuristik zurück.
+
+Architektur-Hinweis: Der Parser liegt hinter einem sprach-agnostischen
+`SourceModel`-Port (`core/sourcetree`). Die Checks fragen domänennah
+(`call_sites()`, `tool_definitions()` …) und sehen `ast`/`tree-sitter` nie —
+eine neue Sprache wäre ein neuer Adapter, kein Check-Umbau.
+
 ## Verwendung
 
 ```bash
@@ -125,6 +146,7 @@ gemeldet — weder Pass noch Finding, und niemals stillschweigend als „sicher"
 - Tool-Poisoning-Erkennung ist Pattern-basiert, kein LLM-Klassifikator
   wie bei `mcp-scan`. Für höhere Präzision wäre ein optionaler
   LLM-Judge-Call eine sinnvolle Tier-2-Erweiterung.
-- Deckt aktuell nur Python ernsthaft ab (JS/TS nur für
-  Command-Injection). Andere Checks für JS/TS sind eine offene
-  Erweiterung.
+- JS/TS wird mit dem `jsts`-Extra von allen Code-Checks (`CMD_INJECTION`,
+  `PATH_TRAVERSAL`, `TOOL_POISONING`, `HARDCODED_SECRETS`) per AST abgedeckt.
+  Minifizierte/gebundelte Dateien (`node_modules`, `dist`, `build`) sind
+  bewusst ausgeschlossen.

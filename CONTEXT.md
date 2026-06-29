@@ -52,7 +52,7 @@ laufende Server macht). `mcpfrisk` war zum Zeitpunkt der Recherche frei.
 
 | Check ID | Datei | Was wird erkannt | OWASP MCP Top 10 | CWE |
 |---|---|---|---|---|
-| `CMD_INJECTION` | `checks/command_injection.py` | Shell-Aufrufe mit unsanitiertem Input (Python: AST-basiert, JS/TS: Regex) | MCP05 | CWE-78 |
+| `CMD_INJECTION` | `checks/command_injection.py` | Shell-Aufrufe mit unsanitiertem Input (Python + JS/TS: AST-basiert via SourceModel-Port; Regex nur als jsts-absent-Fallback) | MCP05 | CWE-78 |
 | `PATH_TRAVERSAL` | `checks/path_traversal.py` | Dateipfad-Konstruktion aus Tool-Parametern ohne Sandboxing/Normalisierung | MCP05 | CWE-22 |
 | `HARDCODED_SECRETS` | `checks/hardcoded_secrets.py` | API-Keys/Tokens im Quellcode (bekannte Formate + Entropie-Heuristik) | MCP01 | CWE-798 |
 | `TOOL_POISONING` | `checks/tool_poisoning.py` | Versteckte Instruktionen in Tool-Docstrings (das MCP-spezifischste Risiko) | MCP04 | CWE-94 |
@@ -267,8 +267,9 @@ Priorisiert nach Recherche-Relevanz:
 
 ### Mittelfristig (Produktreife)
 
-- JS/TS-Abdeckung auf alle Checks ausweiten (aktuell nur
-  `CMD_INJECTION` deckt JS/TS überhaupt ab, der Rest ist Python-only).
+- ~~JS/TS-Abdeckung auf alle Checks ausweiten~~ **ERLEDIGT** (Feature
+  `002-jsts-ast-coverage`): alle Code-Checks decken JS/TS per AST über den
+  sprach-agnostischen `core/sourcetree`-Port ab (optionales `jsts`-Extra).
 - GitHub Action als eigenständiges, wiederverwendbares Composite-Action
   veröffentlichen (`uses: <user>/mcpfrisk-action@v1`), nicht nur der
   rohe CI-Workflow in diesem Repo.

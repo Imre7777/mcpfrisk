@@ -21,7 +21,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install package with dev dependencies
+      - name: Install package with dev dependencies (includes jsts/tree-sitter)
         run: pip install -e ".[dev]"
 
       - name: Run test suite
@@ -41,3 +41,34 @@ jobs:
           mkdir -p /tmp/clean-only
           cp tests/fixtures/clean_server.py /tmp/clean-only/
           mcpfrisk scan /tmp/clean-only --fail-on high
+
+      - name: Dogfood -- scan a vulnerable TypeScript fixture (expected to fail)
+        run: |
+          mcpfrisk scan tests/fixtures/jsts/tool_poisoning_vuln.ts --fail-on critical || true
+
+  # Eigenständiger Job OHNE das jsts-Extra: stellt sicher, dass der Basis-Install
+  # ohne tree-sitter weder beim Import noch beim Scan crasht und JS/TS-Dateien
+  # sauber übersprungen werden (nie fälschlich als "clean"). Die jsts-markierten
+  # Tests werden hier automatisch geskippt; der Degradations-Pfad wird über
+  # monkeypatch-Tests (test_jsts_robustness/test_sourcetree) trotzdem geprüft.
+  test-without-jsts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install base package (NO jsts extra) + pytest
+        run: |
+          pip install -e .
+          pip install pytest pytest-cov
+
+      - name: Run suite without the JS/TS parser
+        run: pytest tests/ -q
+
+      - name: Dogfood -- scanning a TS file must not crash without jsts
+        run: |
+          mcpfrisk scan tests/fixtures/jsts/cmd_injection_vuln.ts --fail-on critical || true
