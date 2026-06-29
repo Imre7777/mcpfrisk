@@ -67,3 +67,23 @@ def test_parser_absent_skips_jsts_but_cmd_falls_back(tmp_path, monkeypatch):
     # Der Gesamt-Scan läuft durch, ohne zu crashen.
     result = run_static_scan(tmp_path)
     assert "PATH_TRAVERSAL" in result.checks_run
+
+
+def test_scan_prints_jsts_hint_once_when_extra_missing(tmp_path, monkeypatch, capsys):
+    """T033: liegt JS/TS-Code vor, fehlt aber das jsts-Extra, soll der Scan
+    EINMAL auf `pip install mcpfrisk[jsts]` hinweisen (statt still nur Teil-
+    abdeckung zu liefern)."""
+    import argparse
+
+    from mcpfrisk.cli import _run_scan
+    from mcpfrisk.core.sourcetree import treesitter
+
+    monkeypatch.setattr(treesitter, "available", lambda: False)
+    (tmp_path / "vuln.ts").write_text(
+        (JSTS / "cmd_injection_vuln.ts").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    args = argparse.Namespace(path=tmp_path, json=None, fail_on="high", skip=[])
+    _run_scan(args)
+    err = capsys.readouterr().err
+    assert "jsts" in err.lower()
+    assert err.lower().count("pip install mcpfrisk[jsts]".lower()) == 1

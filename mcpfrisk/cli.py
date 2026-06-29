@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from mcpfrisk.core.dynamic_runner import DynamicRunner
+from mcpfrisk.core.fs import iter_source_files
 from mcpfrisk.core.models import Severity
 from mcpfrisk.core.report import (
     print_dynamic_report,
@@ -21,6 +22,9 @@ from mcpfrisk.core.report import (
     write_json_report,
 )
 from mcpfrisk.core.runner import run_static_scan
+from mcpfrisk.core.sourcetree import jsts_available
+
+_JSTS_SUFFIXES = {".js", ".mjs", ".cjs", ".jsx", ".ts", ".mts", ".cts", ".tsx"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -113,6 +117,7 @@ def _run_scan(args: argparse.Namespace) -> int:
         print(f"Fehler: Pfad '{target_path}' existiert nicht.", file=sys.stderr)
         return 2
 
+    _warn_if_jsts_missing(target_path)
     result = run_static_scan(target_path, skip_checks=set(args.skip))
     print_terminal_report(result)
 
@@ -127,6 +132,23 @@ def _run_scan(args: argparse.Namespace) -> int:
 
     print("\n✅ Build markiert als PASSED.")
     return 0
+
+
+def _warn_if_jsts_missing(target_path: Path) -> None:
+    """Einmaliger Hinweis, wenn JS/TS-Code vorliegt, aber das jsts-Extra fehlt.
+
+    Ohne den Parser werden JS/TS-Dateien nur eingeschränkt (bzw. gar nicht)
+    geprüft -- das soll sichtbar sein, statt still als unauffällig durchzugehen
+    (Prinzip III: nie stilles 'clean')."""
+    if jsts_available():
+        return
+    if any(p.suffix.lower() in _JSTS_SUFFIXES for p in iter_source_files(target_path)):
+        print(
+            "ℹ JS/TS-Dateien gefunden, aber das jsts-Extra fehlt -- diese Dateien "
+            "werden nur eingeschränkt geprüft (kein AST). Für volle Analyse:\n"
+            "  pip install mcpfrisk[jsts]",
+            file=sys.stderr,
+        )
 
 
 def _run_probe(args: argparse.Namespace) -> int:
