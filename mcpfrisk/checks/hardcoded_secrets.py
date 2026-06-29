@@ -19,6 +19,12 @@ from pathlib import Path
 from mcpfrisk.core.base_check import BaseCheck
 from mcpfrisk.core.fs import rglob_or_file
 from mcpfrisk.core.models import Finding, Severity
+from mcpfrisk.core.sourcetree import SourceModel, analyze, jsts_available
+
+# Code-Dateien, die AST-gescoped statt zeilenbasiert geprüft werden (sofern der
+# Parser verfügbar ist). Für alles andere (JSON/ENV/YAML, oder JS/TS ohne das
+# jsts-Extra) bleibt der Zeilen-Scan als Fallback.
+_AST_SUFFIXES = {".py", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".mts", ".cts", ".tsx"}
 
 # Bekannte Key-Formate mit hoher Präzision (wenig False Positives)
 KNOWN_KEY_PATTERNS = {
@@ -59,9 +65,101 @@ class HardcodedSecretsCheck(BaseCheck):
                 if self._is_excluded(file_path) or file_path in seen_files:
                     continue
                 seen_files.add(file_path)
+
+                # Code-Dateien AST-gescoped prüfen (Secrets nur in echten
+                # String-Literalen, nicht in Kommentaren) -- sonst Zeilen-Scan.
+                suffix = file_path.suffix.lower()
+                if suffix in _AST_SUFFIXES and (suffix == ".py" or jsts_available()):
+                    model = analyze(file_path)
+                    if model is not None and model.ok:
+                        findings.extend(self._scan_model(model))
+                        continue
+
                 findings.extend(self._scan_file(file_path))
 
         return findings
+
+    def _scan_model(self, model: SourceModel) -> list[Finding]:
+        """AST-gescopter Scan: bekannte Key-Formate nur in String-Literalen,
+        verdächtige Credential-Zuweisungen nur über echte Assignments."""
+        findings: list[Finding] = []
+        flagged_lines: set[int] = set()
+
+        for literal in model.string_literals():
+            for key_type, pattern in KNOWN_KEY_PATTERNS.items():
+                if pattern.search(literal.value):
+                    findings.append(
+                        self._known_key_finding(
+                            model.path, literal.line, literal.snippet, key_type
+                        )
+                    )
+                    flagged_lines.add(literal.line)
+                    break
+
+        for assign in model.assignments():
+            if assign.value is None or assign.value_is_env_lookup:
+                continue
+            if assign.line in flagged_lines:
+                continue  # bereits als bekanntes Key-Format gemeldet
+            if not SUSPICIOUS_VAR_NAMES.search(assign.target_name):
+                continue
+            if any(p.search(assign.value.value) for p in KNOWN_KEY_PATTERNS.values()):
+                continue  # würde sonst doppelt zum String-Literal-Treffer zählen
+            if self._looks_like_secret(assign.value.value):
+                findings.append(
+                    self._suspicious_assignment_finding(
+                        model.path, assign.line, assign.value.snippet
+                    )
+                )
+        return findings
+
+    def _known_key_finding(
+        self, file_path: Path, line: int, snippet: str, key_type: str
+    ) -> Finding:
+        return Finding(
+            check_id=self.check_id,
+            severity=Severity.CRITICAL,
+            title=f"Mögliches Secret im Code: {key_type}",
+            description=(
+                f"Ein String, der dem Format von '{key_type}' entspricht, wurde "
+                "direkt im Quellcode gefunden."
+            ),
+            file_path=file_path,
+            line_number=line,
+            snippet=self._redact(snippet),
+            owasp_mcp_ref="MCP01",
+            cwe_ref="CWE-798",
+            remediation=(
+                "Secret sofort rotieren (es ist in der Git-History vermutlich "
+                "bereits dauerhaft sichtbar). Künftig über Umgebungsvariablen/"
+                "Secret-Manager laden, z.B. os.environ['API_KEY']."
+            ),
+            references=["https://owasp.org/www-project-mcp-top-10/"],
+        )
+
+    def _suspicious_assignment_finding(
+        self, file_path: Path, line: int, snippet: str
+    ) -> Finding:
+        return Finding(
+            check_id=self.check_id,
+            severity=Severity.HIGH,
+            title="Verdächtige Credential-Zuweisung als Literal",
+            description=(
+                "Eine Variable mit sicherheitsrelevantem Namen "
+                "(key/secret/token/password) wird ein String-Literal mit hoher "
+                "Entropie zugewiesen, statt aus einer Umgebungsvariable geladen "
+                "zu werden."
+            ),
+            file_path=file_path,
+            line_number=line,
+            snippet=self._redact(snippet),
+            owasp_mcp_ref="MCP01",
+            cwe_ref="CWE-798",
+            remediation=(
+                "Aus os.environ/process.env oder einem Secret-Manager laden "
+                "statt hartzukodieren."
+            ),
+        )
 
     @staticmethod
     def _is_excluded(path: Path) -> bool:
