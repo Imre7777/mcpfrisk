@@ -17,6 +17,7 @@ import re
 from pathlib import Path
 
 from mcpfrisk.core.base_check import BaseCheck
+from mcpfrisk.core.fs import rglob_or_file
 from mcpfrisk.core.models import Finding, Severity
 
 # Python: Funktionen, die bei String-Eingabe eine Shell aufmachen
@@ -49,19 +50,19 @@ class CommandInjectionCheck(BaseCheck):
     )
 
     def applies_to(self, target_path: Path) -> bool:
-        return any(target_path.rglob("*.py")) or any(
-            target_path.rglob("*.[jt]s")
+        return any(rglob_or_file(target_path, "*.py")) or any(
+            rglob_or_file(target_path, "*.[jt]s")
         )
 
     def run(self, target_path: Path) -> list[Finding]:
         findings: list[Finding] = []
-        for py_file in target_path.rglob("*.py"):
+        for py_file in rglob_or_file(target_path, "*.py"):
             if self._is_excluded(py_file):
                 continue
             findings.extend(self._scan_python_file(py_file))
 
-        for js_file in list(target_path.rglob("*.js")) + list(
-            target_path.rglob("*.ts")
+        for js_file in list(rglob_or_file(target_path, "*.js")) + list(
+            rglob_or_file(target_path, "*.ts")
         ):
             if self._is_excluded(js_file):
                 continue

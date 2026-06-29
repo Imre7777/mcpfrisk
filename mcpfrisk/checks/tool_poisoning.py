@@ -29,6 +29,7 @@ import re
 from pathlib import Path
 
 from mcpfrisk.core.base_check import BaseCheck
+from mcpfrisk.core.fs import rglob_or_file
 from mcpfrisk.core.models import Finding, Severity
 
 # Pattern-Familie 1: Pseudo-XML-Instruktions-Tags, die Modelle als
@@ -72,13 +73,13 @@ class ToolDescriptionPoisoningCheck(BaseCheck):
     )
 
     def applies_to(self, target_path: Path) -> bool:
-        return any(target_path.rglob("*.py")) or any(
-            target_path.rglob("*.[jt]s")
+        return any(rglob_or_file(target_path, "*.py")) or any(
+            rglob_or_file(target_path, "*.[jt]s")
         )
 
     def run(self, target_path: Path) -> list[Finding]:
         findings: list[Finding] = []
-        for py_file in target_path.rglob("*.py"):
+        for py_file in rglob_or_file(target_path, "*.py"):
             if self._is_excluded(py_file):
                 continue
             findings.extend(self._scan_python_tool_definitions(py_file))

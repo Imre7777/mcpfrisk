@@ -17,6 +17,7 @@ import re
 from pathlib import Path
 
 from mcpfrisk.core.base_check import BaseCheck
+from mcpfrisk.core.fs import rglob_or_file
 from mcpfrisk.core.models import Finding, Severity
 
 # Bekannte Key-Formate mit hoher Präzision (wenig False Positives)
@@ -54,7 +55,7 @@ class HardcodedSecretsCheck(BaseCheck):
         seen_files = set()
 
         for ext in extensions:
-            for file_path in target_path.rglob(ext):
+            for file_path in rglob_or_file(target_path, ext):
                 if self._is_excluded(file_path) or file_path in seen_files:
                     continue
                 seen_files.add(file_path)
