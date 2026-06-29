@@ -36,3 +36,7 @@ Thumbs.db
 # Falls .env-Dateien beim Testen gegen echte Server entstehen
 .env
 .env.local
+
+# Lokales, nur für mich gepflegtes Übersichtsdokument (nicht versionieren) -
+# in jedem Format (Markdown-Quelle + exportiertes PDF etc.)
+docs/UEBERSICHT.*

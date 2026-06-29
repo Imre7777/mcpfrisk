@@ -8,243 +8,238 @@
 [![Core deps](https://img.shields.io/badge/core%20deps-stdlib--only-success)](./pyproject.toml)
 [![OWASP MCP Top 10](https://img.shields.io/badge/OWASP-MCP%20Top%2010-informational)](https://owasp.org/www-project-mcp-top-10/)
 
-McpFrisk ist ein Pre-Deploy-/CI-Security-Scanner für **MCP-Server-Quellcode**.
-Er läuft **vor** dem Release — im Gegensatz zu Tools wie `mcp-scan`, die
-*installierte* Server beim Endnutzer prüfen, richtet sich McpFrisk an die
-**Server-Autor:innen** und fängt Schwachstellen, bevor sie ausgeliefert werden.
+McpFrisk is a pre-deploy / CI security scanner for **MCP server source code**.
+It runs **before** release — unlike tools such as `mcp-scan`, which inspect
+*installed* servers on the end user's machine, McpFrisk targets the
+**server authors** and catches vulnerabilities before they ship.
 
-- **Statisch (Tier 1):** AST-basierte Checks für Command-Injection, Path-Traversal,
-  Hardcoded Secrets und Tool-Poisoning — für Python *und* JS/TS.
-- **Dynamisch (Tier 2):** prüft einen **laufenden** Server (Auth-Boundary, SSRF)
-  mit echtem Beweis statt Heuristik.
-- **Stdlib-only-Kern:** der Basis-Install bringt keine externen Abhängigkeiten mit —
-  kleine Angriffsfläche, triviale Installation. JS/TS-Parsing ist ein optionales Extra.
-- **CI-tauglich:** ein Exit-Code, ein optionaler JSON-Report — direkt als Build-Gate nutzbar.
+- **Static (Tier 1):** AST-based checks for command injection, path traversal,
+  hardcoded secrets and tool poisoning — for Python *and* JS/TS.
+- **Dynamic (Tier 2):** probes a **running** server (auth boundary, SSRF) with
+  real proof instead of heuristics.
+- **Stdlib-only core:** the base install ships no external dependencies —
+  small attack surface, trivial installation. JS/TS parsing is an optional extra.
+- **CI-ready:** one exit code, one optional JSON report — usable directly as a build gate.
 
-> **Neu im Projekt?** Lies zuerst [`CONTEXT.md`](./CONTEXT.md) — vollständige
-> Architektur-Begründung, Lessons Learned, die Sicherheits-Recherche hinter den
-> Checks und das [GitHub Spec-Kit](https://github.com/github/spec-kit)-Setup für
-> die Weiterentwicklung. Wettbewerbslage und Differenzierung:
+> **New to the project?** Start with [`CONTEXT.md`](./CONTEXT.md) — full
+> architectural rationale, lessons learned, the security research behind the
+> checks, and the [GitHub Spec-Kit](https://github.com/github/spec-kit) setup
+> used for further development. Competitive landscape and differentiation:
 > [`MARKET-RESEARCH.md`](./MARKET-RESEARCH.md).
 
-## Inhalt
+## Contents
 
-- [Schnellstart](#schnellstart)
-- [JavaScript/TypeScript-Unterstützung](#javascripttypescript-unterstützung-optionales-extra)
-- [Verwendung](#verwendung)
-- [Checks (Tier 1, statisch)](#aktuell-implementierte-checks-tier-1-statisch)
-- [Tier 2 (dynamisch)](#tier-2-dynamisch-braucht-laufenden-server)
+- [Quickstart](#quickstart)
+- [JavaScript/TypeScript support](#javascripttypescript-support-optional-extra)
+- [Usage](#usage)
+- [Checks (Tier 1, static)](#currently-implemented-checks-tier-1-static)
+- [Tier 2 (dynamic)](#tier-2-dynamic-needs-a-running-server)
 - [Roadmap (Tier 3)](#roadmap-tier-3-supply-chain--spec-compliance)
-- [Design-Prinzipien](#design-prinzipien)
-- [Bekannte Grenzen](#bekannte-grenzen-bewusst-kein-bug)
-- [Entwicklung](#entwicklung)
+- [Design principles](#design-principles)
+- [Known limitations](#known-limitations-intentional-not-a-bug)
+- [Development](#development)
 
-## Schnellstart
+## Quickstart
 
 ```bash
-# Im Repo-Root (pyproject.toml liegt hier)
+# From the repo root (pyproject.toml lives here)
 pip install -e .
 
-mcpfrisk scan ./pfad/zum/server
+mcpfrisk scan ./path/to/server
 ```
 
-Ohne Installation direkt ausführbar:
+Runnable without installation:
 
 ```bash
-python3 -m mcpfrisk.cli scan ./pfad/zum/server
+python3 -m mcpfrisk.cli scan ./path/to/server
 ```
 
-### JavaScript/TypeScript-Unterstützung (optionales Extra)
+### JavaScript/TypeScript support (optional extra)
 
-Der Basis-Install bleibt bewusst abhängigkeitsfrei (nur Python-Standardbib).
-Für **vollwertige, parser-basierte JS/TS-Analyse** (gleiche Tiefe wie bei
-Python) das `jsts`-Extra installieren:
+The base install stays dependency-free on purpose (Python standard library only).
+For **full, parser-based JS/TS analysis** (same depth as for Python), install
+the `jsts` extra:
 
 ```bash
 pip install -e ".[jsts]"
 ```
 
-Damit analysieren alle Checks `.js/.mjs/.cjs/.jsx` und `.ts/.mts/.cts/.tsx`
-über einen echten AST (tree-sitter) statt Zeilen-Regex — mehrzeilen-fest und
-immun gegen Treffer in Kommentaren/Strings. **Ohne** das Extra werden JS/TS-
-Dateien sauber übersprungen (nie fälschlich als „clean" gewertet);
-`CMD_INJECTION` fällt auf eine einfache Regex-Heuristik zurück.
+With it, every check analyzes `.js/.mjs/.cjs/.jsx` and `.ts/.mts/.cts/.tsx`
+through a real AST (tree-sitter) instead of line-based regex — multi-line safe
+and immune to matches inside comments/strings. **Without** the extra, JS/TS
+files are skipped cleanly (never falsely reported as "clean"); `CMD_INJECTION`
+falls back to a simple regex heuristic.
 
-Architektur-Hinweis: Der Parser liegt hinter einem sprach-agnostischen
-`SourceModel`-Port (`core/sourcetree`). Die Checks fragen domänennah
-(`call_sites()`, `tool_definitions()` …) und sehen `ast`/`tree-sitter` nie —
-eine neue Sprache wäre ein neuer Adapter, kein Check-Umbau.
+Architecture note: the parser sits behind a language-agnostic `SourceModel`
+port (`core/sourcetree`). Checks query at the domain level
+(`call_sites()`, `tool_definitions()`, …) and never see `ast`/`tree-sitter` —
+a new language would be a new adapter, not a check rewrite.
 
-## Verwendung
+## Usage
 
 ```bash
-# Einfacher Scan, Terminal-Report
-mcpfrisk scan ./mein-mcp-server
+# Simple scan, terminal report
+mcpfrisk scan ./my-mcp-server
 
-# JSON-Report für CI-Artefakte/Weiterverarbeitung
-mcpfrisk scan ./mein-mcp-server --json report.json
+# JSON report for CI artifacts / further processing
+mcpfrisk scan ./my-mcp-server --json report.json
 
-# Build soll erst ab CRITICAL failen (statt Default HIGH)
-mcpfrisk scan ./mein-mcp-server --fail-on critical
+# Only fail the build from CRITICAL upwards (instead of the default HIGH)
+mcpfrisk scan ./my-mcp-server --fail-on critical
 
-# Einzelne Checks deaktivieren
-mcpfrisk scan ./mein-mcp-server --skip TOOL_POISONING
+# Disable individual checks
+mcpfrisk scan ./my-mcp-server --skip TOOL_POISONING
 ```
 
-Exit-Code `0` = bestanden, `1` = Findings über der `--fail-on`-Schwelle
-gefunden. Direkt als GitHub Action / CI-Gate nutzbar.
+Exit code `0` = passed, `1` = findings above the `--fail-on` threshold were
+found. Usable directly as a GitHub Action / CI gate.
 
-## Aktuell implementierte Checks (Tier 1, statisch)
+## Currently implemented checks (Tier 1, static)
 
-| Check ID | Was wird geprüft | OWASP MCP Top 10 | Anteil an realen CVEs |
+| Check ID | What is checked | OWASP MCP Top 10 | Share of real-world CVEs |
 |---|---|---|---|
-| `CMD_INJECTION` | Shell-Aufrufe mit unsanitiertem Input | MCP05 | ~43% |
-| `PATH_TRAVERSAL` | Dateipfad-Konstruktion ohne Sandboxing | MCP05 | ~82% der Implementierungen anfällig |
-| `HARDCODED_SECRETS` | API-Keys/Tokens im Quellcode | MCP01 | — |
-| `TOOL_POISONING` | Versteckte Instruktionen in Tool-Beschreibungen | MCP04 | 84% Erfolgsrate bei Auto-Approval |
+| `CMD_INJECTION` | Shell calls with unsanitized input | MCP05 | ~43% |
+| `PATH_TRAVERSAL` | File path construction without sandboxing | MCP05 | ~82% of implementations vulnerable |
+| `HARDCODED_SECRETS` | API keys/tokens in source code | MCP01 | — |
+| `TOOL_POISONING` | Hidden instructions in tool descriptions | MCP04 | 84% success rate under auto-approval |
 
-Jeder Check ist eine eigenständige Klasse unter `mcpfrisk/checks/`,
-registriert in `checks/registry.py`. Neue Checks hinzufügen heißt: neue
-Datei + einen Eintrag in der Registry, kein bestehender Code wird berührt.
+Each check is a self-contained class under `mcpfrisk/checks/`, registered in
+`checks/registry.py`. Adding a new check means: a new file plus one entry in
+the registry — no existing code is touched.
 
-## Tier 2 (dynamisch, braucht laufenden Server)
+## Tier 2 (dynamic, needs a running server)
 
-Diese brauchen eine echte Verbindung zum MCP-Server statt nur den Quellcode zu
-lesen. Ausgeführt über den `probe`-Befehl gegen einen **laufenden** Server —
-wahlweise per HTTP (`--server <url>`) oder über **stdio** (`--stdio "<command>"`),
-den Transport, über den die Mehrheit der MCP-Server läuft:
+These need a real connection to the MCP server rather than just reading the
+source. Run via the `probe` command against a **running** server — either over
+HTTP (`--server <url>`) or over **stdio** (`--stdio "<command>"`), the transport
+the majority of MCP servers use:
 
 ```bash
-# HTTP: prüft u.a., ob der Server unauthentifizierte Anfragen ablehnt (401/403)
+# HTTP: checks, among other things, that the server rejects unauthenticated requests (401/403)
 mcpfrisk probe --server http://localhost:8000/mcp
 
-# stdio: McpFrisk startet den Server als Subprozess und spricht newline-JSON-RPC
+# stdio: McpFrisk starts the server as a subprocess and speaks newline-delimited JSON-RPC
 mcpfrisk probe --stdio "python -m my_server"
 mcpfrisk probe --stdio "npx -y @scope/mcp-server" --timeout 5 --fail-on high
 ```
 
-> ⚠️ **Sicherheitshinweis:** `--stdio` **führt den angegebenen Befehl aus**
-> (Code-Ausführung). Nur gegen Server richten, denen du vertraust bzw. die du
-> gerade testest. McpFrisk verhandelt automatisch die Protokoll-Ära
-> (modernes stateless `server/discover` mit Fallback auf den Legacy-
-> `initialize`-Handshake), spricht reines stdlib-JSON-RPC (kein `mcp`-SDK) und
-> beendet den Subprozess zuverlässig wieder.
+> ⚠️ **Security note:** `--stdio` **runs the given command** (code execution).
+> Only point it at servers you trust or are actively testing. McpFrisk
+> automatically negotiates the protocol era (modern stateless `server/discover`
+> with a fallback to the legacy `initialize` handshake), speaks pure
+> stdlib JSON-RPC (no `mcp` SDK) and terminates the subprocess reliably.
 
-Ein nicht erreichbarer/timeoutender/nicht startbarer Server wird als
-*inconclusive* gemeldet — weder Pass noch Finding, und niemals stillschweigend
-als „sicher". **AUTH_BOUNDARY** ist transportbedingt HTTP-spezifisch (stdio hat
-keinen Transport-Auth-Boundary) und meldet auf stdio *inconclusive*; die
-`call()`-basierten Checks wie **SSRF_CHECK** laufen über beide Transporte.
+An unreachable / timing-out / non-startable server is reported as
+*inconclusive* — neither a pass nor a finding, and never silently treated as
+"secure". **AUTH_BOUNDARY** is HTTP-specific by nature (stdio has no
+transport-level auth boundary) and reports *inconclusive* over stdio; the
+`call()`-based checks such as **SSRF_CHECK** run over both transports.
 
-**Implementiert:**
+**Implemented:**
 
-- **AUTH_BOUNDARY** ✅ — sendet Anfragen ohne/mit falschem Token und prüft,
-  ob der Server wirklich 401/403 liefert statt durchzulassen (stdlib-only,
-  keine externe Abhängigkeit)
-- **SSRF_CHECK** ✅ — entdeckt URL-akzeptierende Tools und beweist *out-of-band*,
-  ob der Server zu Requests gegen kontrollierte/interne Ziele gebracht werden
-  kann: McpFrisk startet einen einmaligen Loopback-Callback-Listener und wertet
-  einen eingehenden Treffer als Beweis (keine Heuristik). Deckt direkte Fetches
-  und Redirect-Bypass ab und spricht das Cloud-Metadata-Ziel `169.254.169.254`
-  an. Ein korrekt abgesicherter Server (Denylist + Post-DNS-IP-Prüfung) bleibt
-  ohne Befund. Stdlib-only (CWE-918).
+- **AUTH_BOUNDARY** ✅ — sends requests with no / an invalid token and checks
+  whether the server really returns 401/403 instead of letting them through
+  (stdlib-only, no external dependency).
+- **SSRF_CHECK** ✅ — discovers URL-accepting tools and proves *out-of-band*
+  whether the server can be coerced into requests against controlled/internal
+  targets: McpFrisk starts a single-use loopback callback listener and treats
+  an incoming hit as proof (not a heuristic). Covers direct fetches and
+  redirect bypass, and probes the cloud metadata endpoint `169.254.169.254`.
+  A properly hardened server (denylist + post-DNS IP check) stays finding-free.
+  Stdlib-only (CWE-918).
 
-**Geplant** (Architektur via `BaseDynamicCheck`/`DynamicRunner` vorhanden):
+**Planned** (architecture via `BaseDynamicCheck`/`DynamicRunner` already in place):
 
-- **RBAC_CROSS_TENANT** — simuliert mehrere Rollen, prüft auf
-  Namespace-Leckage zwischen Tools (z.B. Student/Teacher-Trennung)
-- **SCHEMA_FUZZING** — malformed/oversized Parameter, prüft auf Crashes
-  oder Stacktrace-Leaks
-- **ERROR_LEAKAGE** — prüft Fehlerantworten auf Pfade, Stacktraces,
-  DB-Schema-Informationen
-- **RATE_LIMITING** — parallele Last, prüft auf fehlende Constraints
+- **RBAC_CROSS_TENANT** — simulates multiple roles, checks for namespace
+  leakage between tools (e.g. student/teacher separation).
+- **SCHEMA_FUZZING** — malformed/oversized parameters, checks for crashes
+  or stacktrace leaks.
+- **ERROR_LEAKAGE** — inspects error responses for paths, stacktraces,
+  DB schema information.
+- **RATE_LIMITING** — generates parallel load, checks for missing constraints.
 
-## Roadmap: Tier 3 (Supply-Chain & Spec-Compliance)
+## Roadmap: Tier 3 (supply chain & spec compliance)
 
-- **DEPENDENCY_SCAN** — Wrapper um `osv-scanner`/`pip-audit` statt
-  Neuerfindung
-- **TYPOSQUAT_CHECK** — Levenshtein-Distanz des Paketnamens gegen
-  bekannte populäre MCP-Server
-- **PACKAGE_PROVENANCE** — npm-Provenance/Signatur-Check
-- **PROTOCOL_COMPLIANCE** — korrekte JSON-RPC-Error-Codes, Vorbereitung
-  auf MCP-Spec-RC (Juli 2026)
+- **DEPENDENCY_SCAN** — a wrapper around `osv-scanner`/`pip-audit` rather than
+  reinventing the wheel.
+- **TYPOSQUAT_CHECK** — Levenshtein distance of the package name against
+  known popular MCP servers.
+- **PACKAGE_PROVENANCE** — npm provenance / signature check.
+- **PROTOCOL_COMPLIANCE** — correct JSON-RPC error codes, preparation for
+  the MCP spec RC (July 2026).
 
-## Design-Prinzipien
+## Design principles
 
-1. **Lieber False Positives als False Negatives.** Ein übersehener
-   Befund ist schlimmer als ein zu vorsichtiger.
-2. **Jeder Check ist isoliert testbar.** Siehe `tests/fixtures/` für
-   einen absichtlich verwundbaren und einen absichtlich sauberen
-   Beispiel-Server — beide dienen als Regressionstests.
-3. **Kein Neuerfinden bestehender, guter Tools.** Für Dependency-Scanning
-   gibt es `osv-scanner`/Snyk, für generische Secrets `gitleaks`. McpFrisk
-   wrappt diese eher, als sie zu duplizieren — der Mehrwert liegt in den
-   MCP-*spezifischen* Checks (Tool-Poisoning, RBAC-Cross-Tenant), die
-   kein generisches Tool kennt.
-4. **Reports zeigen nie das vollständige Secret.** Auch im eigenen
-   Output wird redacted — ein Scanner soll kein neues Leck erzeugen.
+1. **Prefer false positives over false negatives.** A missed finding is worse
+   than an overly cautious one.
+2. **Every check is testable in isolation.** See `tests/fixtures/` for an
+   intentionally vulnerable and an intentionally clean example server — both
+   serve as regression tests.
+3. **Don't reinvent existing good tools.** For dependency scanning there is
+   `osv-scanner`/Snyk, for generic secrets `gitleaks`. McpFrisk wraps these
+   rather than duplicating them — the value lies in the MCP-*specific* checks
+   (tool poisoning, RBAC cross-tenant) that no generic tool knows about.
+4. **Reports never show the full secret.** Even our own output is redacted —
+   a scanner must not create a new leak.
 
-## Bekannte Grenzen (bewusst, kein Bug)
+## Known limitations (intentional, not a bug)
 
-- Statische Analyse ist eine Heuristik. AST-Matching kann keinen
-  vollständigen Datenfluss durch beliebig komplexen Code verfolgen
-  (das Taint-Tracking hier ist bewusst simpel: eine Ebene von
-  Zwischenvariablen, kein vollständiger Dataflow-Graph). Validiert ein
-  Server in einer *separaten* Funktion (z.B. `validatePath()`), meldet
-  `PATH_TRAVERSAL` weiterhin (Prinzip: lieber FP als FN), hängt aber einen
-  **Triage-Hinweis** auf die existierende Validierungsfunktion an, damit ein
-  wahrscheinlicher False Positive schnell einzuordnen ist.
-- Severity folgt der Rubrik: eine konstante Argument-Liste mit redundantem
-  `subprocess.run(..., shell=True)` ist ein Best-Practice-Verstoß (MEDIUM),
-  kein direkter RCE-Pfad (CRITICAL bleibt dem interpolierten Befehl vorbehalten).
-- Tool-Poisoning-Erkennung ist Pattern-basiert, kein LLM-Klassifikator
-  wie bei `mcp-scan`. Für höhere Präzision wäre ein optionaler
-  LLM-Judge-Call eine sinnvolle Tier-2-Erweiterung.
-- JS/TS wird mit dem `jsts`-Extra von allen Code-Checks (`CMD_INJECTION`,
-  `PATH_TRAVERSAL`, `TOOL_POISONING`, `HARDCODED_SECRETS`) per AST abgedeckt.
-  Minifizierte/gebundelte Dateien (`node_modules`, `dist`, `build`) sind
-  bewusst ausgeschlossen.
+- Static analysis is a heuristic. AST matching cannot trace full data flow
+  through arbitrarily complex code (the taint tracking here is deliberately
+  simple: one level of intermediate variables, not a full dataflow graph).
+  If a server validates in a *separate* function (e.g. `validatePath()`),
+  `PATH_TRAVERSAL` still reports it (principle: prefer FP over FN) but attaches
+  a **triage hint** pointing at the existing validation function, so a likely
+  false positive is quick to classify.
+- Severity follows the rubric: a constant argument list with a redundant
+  `subprocess.run(..., shell=True)` is a best-practice violation (MEDIUM), not
+  a direct RCE path (CRITICAL is reserved for the interpolated command).
+- Tool-poisoning detection is pattern-based, not an LLM classifier like
+  `mcp-scan`. For higher precision, an optional LLM-judge call would be a
+  sensible Tier-2 extension.
+- With the `jsts` extra, JS/TS is covered by all code checks (`CMD_INJECTION`,
+  `PATH_TRAVERSAL`, `TOOL_POISONING`, `HARDCODED_SECRETS`) via AST. Minified/
+  bundled files (`node_modules`, `dist`, `build`) are excluded on purpose.
 
-## Entwicklung
+## Development
 
 ```bash
-# Dev-Setup (inkl. Tests + tree-sitter für JS/TS)
+# Dev setup (incl. tests + tree-sitter for JS/TS)
 pip install -e ".[dev]"
 
-# Komplette Testsuite
+# Full test suite
 pytest -q
 
-# Mit Coverage (wie in CI)
+# With coverage (as in CI)
 pytest --cov=mcpfrisk --cov-report=term-missing
 ```
 
-Die CI (siehe [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)) läuft
-gegen Python 3.10/3.11/3.12 und prüft zusätzlich in einem eigenen Job den
-Degradations-Pfad **ohne** das `jsts`-Extra (Basis-Install darf nie crashen).
+CI (see [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)) runs against
+Python 3.10/3.11/3.12 and additionally checks, in a dedicated job, the
+degradation path **without** the `jsts` extra (the base install must never crash).
 
-### Projektstruktur
+### Project layout
 
 ```text
 mcpfrisk/
 ├── core/
-│   ├── models.py          # Finding, Severity, ScanResult + Tier-2-Modelle
-│   ├── base_check.py      # BaseCheck (statisch) / BaseDynamicCheck (Tier 2)
-│   ├── runner.py          # Statische Orchestrierung
-│   ├── dynamic_runner.py  # Tier-2-Orchestrierung + Transport-Port (HTTP-Adapter)
-│   ├── stdio_transport.py # stdio-Adapter: Subprozess + newline-JSON-RPC
-│   ├── sourcetree/        # SourceModel-Port + Python-/tree-sitter-Adapter
-│   └── report.py          # Terminal-Ausgabe + JSON-Export
+│   ├── models.py          # Finding, Severity, ScanResult + Tier-2 models
+│   ├── base_check.py      # BaseCheck (static) / BaseDynamicCheck (Tier 2)
+│   ├── runner.py          # Static orchestration
+│   ├── dynamic_runner.py  # Tier-2 orchestration + transport port (HTTP adapter)
+│   ├── stdio_transport.py # stdio adapter: subprocess + newline JSON-RPC
+│   ├── sourcetree/        # SourceModel port + Python / tree-sitter adapters
+│   └── report.py          # Terminal output + JSON export
 ├── checks/
-│   ├── registry.py        # STATIC_CHECKS + DYNAMIC_CHECKS  ← neue Checks hier
-│   └── *.py               # je ein Check pro Datei (isoliert testbar)
-└── cli.py                 # argparse Entry Point (scan + probe)
+│   ├── registry.py        # STATIC_CHECKS + DYNAMIC_CHECKS  ← new checks here
+│   └── *.py               # one check per file (testable in isolation)
+└── cli.py                 # argparse entry point (scan + probe)
 ```
 
-Ein neuer Check ist eine neue Datei in `checks/` plus ein Eintrag in
-`checks/registry.py` — bestehender Code wird nicht angefasst. Jeder Check
-braucht ein verwundbares **und** ein sauberes Fixture unter `tests/fixtures/`
-als Regressionstest.
+A new check is a new file in `checks/` plus an entry in `checks/registry.py` —
+existing code is left untouched. Every check needs a vulnerable **and** a clean
+fixture under `tests/fixtures/` as a regression test.
 
-## Lizenz
+## License
 
 [Apache-2.0](./LICENSE) © Imre Obermueller
