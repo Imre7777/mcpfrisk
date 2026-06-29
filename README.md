@@ -109,20 +109,32 @@ Datei + einen Eintrag in der Registry, kein bestehender Code wird berührt.
 
 ## Tier 2 (dynamisch, braucht laufenden Server)
 
-Diese brauchen eine echte Verbindung zum MCP-Server (HTTP) statt nur den
-Quellcode zu lesen. Ausgeführt über den `probe`-Befehl gegen einen
-**laufenden** Server:
+Diese brauchen eine echte Verbindung zum MCP-Server statt nur den Quellcode zu
+lesen. Ausgeführt über den `probe`-Befehl gegen einen **laufenden** Server —
+wahlweise per HTTP (`--server <url>`) oder über **stdio** (`--stdio "<command>"`),
+den Transport, über den die Mehrheit der MCP-Server läuft:
 
 ```bash
-# Prüft, ob der Server unauthentifizierte/ungültige Anfragen ablehnt (401/403)
+# HTTP: prüft u.a., ob der Server unauthentifizierte Anfragen ablehnt (401/403)
 mcpfrisk probe --server http://localhost:8000/mcp
 
-# Mit Timeout, JSON-Report und CI-Gate
-mcpfrisk probe --server http://localhost:8000/mcp --timeout 5 --json probe.json --fail-on high
+# stdio: McpFrisk startet den Server als Subprozess und spricht newline-JSON-RPC
+mcpfrisk probe --stdio "python -m my_server"
+mcpfrisk probe --stdio "npx -y @scope/mcp-server" --timeout 5 --fail-on high
 ```
 
-Ein nicht erreichbarer/timeoutender/stdio-Server wird als *inconclusive*
-gemeldet — weder Pass noch Finding, und niemals stillschweigend als „sicher".
+> ⚠️ **Sicherheitshinweis:** `--stdio` **führt den angegebenen Befehl aus**
+> (Code-Ausführung). Nur gegen Server richten, denen du vertraust bzw. die du
+> gerade testest. McpFrisk verhandelt automatisch die Protokoll-Ära
+> (modernes stateless `server/discover` mit Fallback auf den Legacy-
+> `initialize`-Handshake), spricht reines stdlib-JSON-RPC (kein `mcp`-SDK) und
+> beendet den Subprozess zuverlässig wieder.
+
+Ein nicht erreichbarer/timeoutender/nicht startbarer Server wird als
+*inconclusive* gemeldet — weder Pass noch Finding, und niemals stillschweigend
+als „sicher". **AUTH_BOUNDARY** ist transportbedingt HTTP-spezifisch (stdio hat
+keinen Transport-Auth-Boundary) und meldet auf stdio *inconclusive*; die
+`call()`-basierten Checks wie **SSRF_CHECK** laufen über beide Transporte.
 
 **Implementiert:**
 
@@ -218,7 +230,8 @@ mcpfrisk/
 │   ├── models.py          # Finding, Severity, ScanResult + Tier-2-Modelle
 │   ├── base_check.py      # BaseCheck (statisch) / BaseDynamicCheck (Tier 2)
 │   ├── runner.py          # Statische Orchestrierung
-│   ├── dynamic_runner.py  # Tier-2-Orchestrierung (stdlib HTTP)
+│   ├── dynamic_runner.py  # Tier-2-Orchestrierung + Transport-Port (HTTP-Adapter)
+│   ├── stdio_transport.py # stdio-Adapter: Subprozess + newline-JSON-RPC
 │   ├── sourcetree/        # SourceModel-Port + Python-/tree-sitter-Adapter
 │   └── report.py          # Terminal-Ausgabe + JSON-Export
 ├── checks/

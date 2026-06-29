@@ -81,7 +81,8 @@ mcpfrisk/
 │   ├── models.py         # Finding, Severity, ScanResult + Tier-2-Modelle (BoundaryOutcome, *Probe)
 │   ├── base_check.py      # BaseCheck (statisch) / BaseDynamicCheck (Tier 2, implementiert)
 │   ├── runner.py          # Statische Orchestrierung
-│   ├── dynamic_runner.py  # Tier-2-Orchestrierung: DynamicRunner + DynamicSession (stdlib)
+│   ├── dynamic_runner.py  # Tier-2-Orchestrierung: DynamicRunner + Transport-Port + HttpTransport
+│   ├── stdio_transport.py # Tier-2 stdio-Adapter: Subprozess + newline-JSON-RPC + Era-Negotiation
 │   ├── sourcetree/        # SourceModel-Port + Python-/tree-sitter-Adapter (JS/TS, Tier 1)
 │   └── report.py          # Terminal-Ausgabe + JSON-Export (statisch + dynamisch)
 ├── checks/
@@ -229,9 +230,23 @@ genug für Solo-Maintainer, CI-first.**
 Architektur implementiert (`BaseDynamicCheck` in `core/base_check.py`,
 `DynamicRunner` + `DynamicSession` in `core/dynamic_runner.py`, eigene
 `DYNAMIC_CHECKS`-Registry, Drei-Zustands-Verdikt `BoundaryOutcome`).
-Diese Checks verbinden sich per HTTP mit einem echten laufenden Server
-(stdlib `urllib`/`http.server` — bewusst **ohne** externe Abhängigkeit,
-kein `dynamic`/`mcp`-Extra nötig), nicht nur Quellcode lesen.
+Diese Checks verbinden sich mit einem echten laufenden Server — über einen
+**Transport-Port** mit zwei Adaptern (Feature `005-stdio-transport`):
+`HttpTransport` (stdlib `urllib`) und `StdioTransport` (Subprozess + newline-
+delimited JSON-RPC, `core/stdio_transport.py`). Bewusst **ohne** externe
+Abhängigkeit (kein `dynamic`/`mcp`-Extra). Die Checks sind transport-blind
+(`session.target/probe/call`) — ein neuer Transport ist ein neuer Adapter,
+kein Check-Umbau.
+
+- ~~stdio-Transport für dynamische Checks~~ **ERLEDIGT** (Feature
+  `005-stdio-transport`): `mcpfrisk probe --stdio "<command>"` startet den
+  Server als Subprozess und spricht reines stdlib-JSON-RPC. Protokoll-Ära wird
+  verhandelt: erst modernes stateless `server/discover` (`_meta`), Fallback auf
+  Legacy-`initialize`+`notifications/initialized`. Zuverlässiger Lifecycle
+  (terminate→kill, kein verwaister Prozess). `AUTH_BOUNDARY` bleibt
+  transportbedingt HTTP-spezifisch (stdio hat keinen Transport-Auth-Boundary →
+  inconclusive); `SSRF_CHECK` u. künftige `call()`-Checks laufen über beide
+  Transporte. **Sicherheit:** `--stdio` führt den Befehl aus (Code-Ausführung).
 
 Priorisiert nach Recherche-Relevanz:
 
