@@ -1,21 +1,51 @@
 # McpFrisk
 
-Pre-Deploy/CI-Security-Scanner für MCP-Server-Quellcode. Läuft **vor** dem
-Release — im Gegensatz zu Tools wie `mcp-scan`, die *installierte* Server
-beim Endnutzer prüfen, richtet sich McpFrisk an **Server-Autoren**.
+> **Security linting for MCP servers — before they ship.**
 
-> **Neu im Projekt?** Lies zuerst [`CONTEXT.md`](./CONTEXT.md) — das
-> enthält die vollständige Architektur-Begründung, bekannte Bugs/Lessons
-> Learned, die Sicherheits-Recherche hinter den Checks, und die Anleitung
-> zum Einrichten von [GitHub Spec-Kit](https://github.com/github/spec-kit)
-> für die weitere Entwicklung (Abschnitt 9). Für die Wettbewerbslage und
-> Differenzierungsstrategie siehe [`MARKET-RESEARCH.md`](./MARKET-RESEARCH.md).
+[![CI](https://github.com/Imre7777/mcpfrisk/actions/workflows/ci.yml/badge.svg)](https://github.com/Imre7777/mcpfrisk/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
+[![Core deps](https://img.shields.io/badge/core%20deps-stdlib--only-success)](./pyproject.toml)
+[![OWASP MCP Top 10](https://img.shields.io/badge/OWASP-MCP%20Top%2010-informational)](https://owasp.org/www-project-mcp-top-10/)
 
-## Installation
+McpFrisk ist ein Pre-Deploy-/CI-Security-Scanner für **MCP-Server-Quellcode**.
+Er läuft **vor** dem Release — im Gegensatz zu Tools wie `mcp-scan`, die
+*installierte* Server beim Endnutzer prüfen, richtet sich McpFrisk an die
+**Server-Autor:innen** und fängt Schwachstellen, bevor sie ausgeliefert werden.
+
+- **Statisch (Tier 1):** AST-basierte Checks für Command-Injection, Path-Traversal,
+  Hardcoded Secrets und Tool-Poisoning — für Python *und* JS/TS.
+- **Dynamisch (Tier 2):** prüft einen **laufenden** Server (Auth-Boundary, SSRF)
+  mit echtem Beweis statt Heuristik.
+- **Stdlib-only-Kern:** der Basis-Install bringt keine externen Abhängigkeiten mit —
+  kleine Angriffsfläche, triviale Installation. JS/TS-Parsing ist ein optionales Extra.
+- **CI-tauglich:** ein Exit-Code, ein optionaler JSON-Report — direkt als Build-Gate nutzbar.
+
+> **Neu im Projekt?** Lies zuerst [`CONTEXT.md`](./CONTEXT.md) — vollständige
+> Architektur-Begründung, Lessons Learned, die Sicherheits-Recherche hinter den
+> Checks und das [GitHub Spec-Kit](https://github.com/github/spec-kit)-Setup für
+> die Weiterentwicklung. Wettbewerbslage und Differenzierung:
+> [`MARKET-RESEARCH.md`](./MARKET-RESEARCH.md).
+
+## Inhalt
+
+- [Schnellstart](#schnellstart)
+- [JavaScript/TypeScript-Unterstützung](#javascripttypescript-unterstützung-optionales-extra)
+- [Verwendung](#verwendung)
+- [Checks (Tier 1, statisch)](#aktuell-implementierte-checks-tier-1-statisch)
+- [Tier 2 (dynamisch)](#tier-2-dynamisch-braucht-laufenden-server)
+- [Roadmap (Tier 3)](#roadmap-tier-3-supply-chain--spec-compliance)
+- [Design-Prinzipien](#design-prinzipien)
+- [Bekannte Grenzen](#bekannte-grenzen-bewusst-kein-bug)
+- [Entwicklung](#entwicklung)
+
+## Schnellstart
 
 ```bash
-cd mcpfrisk
-pip install -e .   # oder einfach per PYTHONPATH ausführen, siehe unten
+# Im Repo-Root (pyproject.toml liegt hier)
+pip install -e .
+
+mcpfrisk scan ./pfad/zum/server
 ```
 
 Ohne Installation direkt ausführbar:
@@ -147,7 +177,14 @@ gemeldet — weder Pass noch Finding, und niemals stillschweigend als „sicher"
 - Statische Analyse ist eine Heuristik. AST-Matching kann keinen
   vollständigen Datenfluss durch beliebig komplexen Code verfolgen
   (das Taint-Tracking hier ist bewusst simpel: eine Ebene von
-  Zwischenvariablen, kein vollständiger Dataflow-Graph).
+  Zwischenvariablen, kein vollständiger Dataflow-Graph). Validiert ein
+  Server in einer *separaten* Funktion (z.B. `validatePath()`), meldet
+  `PATH_TRAVERSAL` weiterhin (Prinzip: lieber FP als FN), hängt aber einen
+  **Triage-Hinweis** auf die existierende Validierungsfunktion an, damit ein
+  wahrscheinlicher False Positive schnell einzuordnen ist.
+- Severity folgt der Rubrik: eine konstante Argument-Liste mit redundantem
+  `subprocess.run(..., shell=True)` ist ein Best-Practice-Verstoß (MEDIUM),
+  kein direkter RCE-Pfad (CRITICAL bleibt dem interpolierten Befehl vorbehalten).
 - Tool-Poisoning-Erkennung ist Pattern-basiert, kein LLM-Klassifikator
   wie bei `mcp-scan`. Für höhere Präzision wäre ein optionaler
   LLM-Judge-Call eine sinnvolle Tier-2-Erweiterung.
@@ -155,3 +192,46 @@ gemeldet — weder Pass noch Finding, und niemals stillschweigend als „sicher"
   `PATH_TRAVERSAL`, `TOOL_POISONING`, `HARDCODED_SECRETS`) per AST abgedeckt.
   Minifizierte/gebundelte Dateien (`node_modules`, `dist`, `build`) sind
   bewusst ausgeschlossen.
+
+## Entwicklung
+
+```bash
+# Dev-Setup (inkl. Tests + tree-sitter für JS/TS)
+pip install -e ".[dev]"
+
+# Komplette Testsuite
+pytest -q
+
+# Mit Coverage (wie in CI)
+pytest --cov=mcpfrisk --cov-report=term-missing
+```
+
+Die CI (siehe [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)) läuft
+gegen Python 3.10/3.11/3.12 und prüft zusätzlich in einem eigenen Job den
+Degradations-Pfad **ohne** das `jsts`-Extra (Basis-Install darf nie crashen).
+
+### Projektstruktur
+
+```text
+mcpfrisk/
+├── core/
+│   ├── models.py          # Finding, Severity, ScanResult + Tier-2-Modelle
+│   ├── base_check.py      # BaseCheck (statisch) / BaseDynamicCheck (Tier 2)
+│   ├── runner.py          # Statische Orchestrierung
+│   ├── dynamic_runner.py  # Tier-2-Orchestrierung (stdlib HTTP)
+│   ├── sourcetree/        # SourceModel-Port + Python-/tree-sitter-Adapter
+│   └── report.py          # Terminal-Ausgabe + JSON-Export
+├── checks/
+│   ├── registry.py        # STATIC_CHECKS + DYNAMIC_CHECKS  ← neue Checks hier
+│   └── *.py               # je ein Check pro Datei (isoliert testbar)
+└── cli.py                 # argparse Entry Point (scan + probe)
+```
+
+Ein neuer Check ist eine neue Datei in `checks/` plus ein Eintrag in
+`checks/registry.py` — bestehender Code wird nicht angefasst. Jeder Check
+braucht ein verwundbares **und** ein sauberes Fixture unter `tests/fixtures/`
+als Regressionstest.
+
+## Lizenz
+
+[Apache-2.0](./LICENSE) © Imre Obermueller
