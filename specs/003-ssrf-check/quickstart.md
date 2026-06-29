@@ -8,11 +8,12 @@ per [plan.md](./plan.md). For interface details see
 
 ```powershell
 # From the repo root, in the project venv
-uv pip install -e ".[dev,dynamic]"   # 'dynamic' extra pulls in the mcp SDK (shared with AUTH_BOUNDARY)
+uv pip install -e ".[dev]"
 ```
 
-The check itself needs only the Python standard library (callback listener via `http.server`);
-the `dynamic` extra is for speaking to the running target server.
+SSRF_CHECK is **stdlib-only** — the callback listener uses `http.server` and the server talk
+uses `urllib`, exactly like AUTH_BOUNDARY. There is **no extra dependency** to install
+(Constitution IV holds even for this Tier 2 check).
 
 ## Run the automated validation (the source of truth)
 

@@ -32,8 +32,8 @@ SSRF_CHECK reuses the Tier 2 dynamic path built for AUTH_BOUNDARY.
 
 **Purpose**: No new dependency — confirm the existing `dynamic` extra and test collection cover SSRF.
 
-- [ ] T001 Confirm the `dynamic` extra in `pyproject.toml` is sufficient for SSRF_CHECK (the check is stdlib-only; only target-server talk needs `dynamic`). No new dependency added (Constitution IV); note this explicitly in the SSRF section.
-- [ ] T002 [P] Confirm `pytest` collects `tests/test_ssrf_check.py` and `tests/fixtures/ssrf_*` via existing `[tool.pytest.ini_options]`.
+- [x] T001 Confirm no new dependency is needed: there is no `dynamic` extra in `pyproject.toml`; AUTH_BOUNDARY and SSRF_CHECK are both stdlib-only (`http.server` + `urllib`). SSRF adds nothing to `pyproject.toml` (Constitution IV holds for this Tier 2 check too).
+- [x] T002 [P] Confirm `pytest` collects `tests/test_ssrf_check.py` and `tests/fixtures/ssrf_*` via existing `[tool.pytest.ini_options]`.
 - [ ] T003 [P] Add an "SSRF_CHECK" subsection to `README.md` (Tier 2): what it does (out-of-band callback proof), `mcpfrisk probe` usage, and `--skip SSRF_CHECK`.
 
 ---
@@ -44,9 +44,9 @@ SSRF_CHECK reuses the Tier 2 dynamic path built for AUTH_BOUNDARY.
 
 **⚠️ CRITICAL**: No user-story work begins until this phase is complete.
 
-- [ ] T004 Extend `mcpfrisk/core/models.py`: add `ProbeClass` (CALLBACK/METADATA/LOOPBACK/REDIRECT) and `UrlFetchProbe` dataclass (tool, parameter, probe_class, outcome, observed, `to_dict()`) per data-model.md. Reuse `BoundaryOutcome`; widen `BoundaryResult.probes` typing to a `DynamicProbe` protocol so `AuthProbe` and `UrlFetchProbe` both qualify. Do NOT modify the aggregation rule or `Finding`/`Severity`.
-- [ ] T005 Add a generic, additive `DynamicSession.call(method, params=None, timeout_s=None) -> dict` to `mcpfrisk/core/dynamic_runner.py` (JSON-RPC over HTTP; returns parsed `result`; one typed transport error). Must not alter the existing `probe(...)` used by AUTH_BOUNDARY.
-- [ ] T006 Create `mcpfrisk/checks/_ssrf_callback.py`: `CallbackListener` (stdlib `ThreadingHTTPServer` on `127.0.0.1:0`) + `CallbackHit` per contracts §2 — `new_probe_url()`, `redirect_url(token)`, `received(token, timeout_s)`, deterministic `__exit__` shutdown. Bounded waits (FR-010); benign fixed response body.
+- [x] T004 Extend `mcpfrisk/core/models.py`: add `ProbeClass` (CALLBACK/METADATA/LOOPBACK/REDIRECT) and `UrlFetchProbe` dataclass (tool, parameter, probe_class, outcome, observed, `to_dict()`) per data-model.md. Reuse `BoundaryOutcome`; widen `BoundaryResult.probes` typing to a `DynamicProbe` protocol so `AuthProbe` and `UrlFetchProbe` both qualify. Do NOT modify the aggregation rule or `Finding`/`Severity`.
+- [x] T005 Add a generic, additive `DynamicSession.call(method, params=None, timeout_s=None) -> dict` to `mcpfrisk/core/dynamic_runner.py` (JSON-RPC over HTTP; returns parsed `result`; one typed transport error). Must not alter the existing `probe(...)` used by AUTH_BOUNDARY.
+- [x] T006 Create `mcpfrisk/checks/_ssrf_callback.py`: `CallbackListener` (stdlib `ThreadingHTTPServer` on `127.0.0.1:0`) + `CallbackHit` per contracts §2 — `new_probe_url()`, `redirect_url(token)`, `received(token, timeout_s)`, deterministic `__exit__` shutdown. Bounded waits (FR-010); benign fixed response body.
 
 **Checkpoint**: Model + session.call + callback listener exist and are unit-testable in isolation; no check registered yet.
 
@@ -60,14 +60,14 @@ SSRF_CHECK reuses the Tier 2 dynamic path built for AUTH_BOUNDARY.
 
 ### Tests for User Story 1 (write FIRST, confirm RED) ⚠️
 
-- [ ] T007 [P] [US1] Create `tests/fixtures/ssrf_vulnerable_server.py`: a localhost HTTP MCP-style server exposing a `fetch_url(url)` tool that performs an outbound GET to any URL it is given (no validation). `tools/list` advertises the URL param.
-- [ ] T008 [US1] Add `tests/test_ssrf_check.py::test_vulnerable_server_is_flagged` — starts the vulnerable fixture + a `CallbackListener` on ephemeral ports, runs the check, asserts exactly one `SSRF_CHECK` finding AND a callback hit with the matching token (SC-001). Confirm it FAILS before implementation.
+- [x] T007 [P] [US1] Create the vulnerable fixture (implemented as a mode in `tests/fixtures/ssrf_servers.py`): a localhost HTTP MCP-style server exposing a `fetch_url(url)` tool that performs an outbound GET to any URL it is given (no validation). `tools/list` advertises the URL param. (Clean + redirect modes also pre-built in the same file for US2/US3.)
+- [x] T008 [US1] Add `tests/test_ssrf_check.py::test_vulnerable_server_is_flagged` — starts the vulnerable fixture + a `CallbackListener` on ephemeral ports, runs the check, asserts exactly one `SSRF_CHECK` finding AND a callback hit with the matching token (SC-001). Confirm it FAILS before implementation.
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] Create `mcpfrisk/checks/ssrf_check.py`: `SsrfCheck(BaseDynamicCheck)`, `check_id="SSRF_CHECK"`, `severity=HIGH`. Discover candidate `(tool, param)` via `session.call("tools/list")` (URL-bearing name / `format: "uri"`); for each, send a CALLBACK probe via `session.call("tools/call", …)` and classify NOT_ENFORCED iff `listener.received(token)` returns a hit. Never raises (→ INCONCLUSIVE probe).
-- [ ] T010 [US1] Register `SsrfCheck` in `mcpfrisk/checks/registry.py` `DYNAMIC_CHECKS` (single entry — Constitution II).
-- [ ] T011 [US1] Confirm `DynamicRunner.run(target)` converts the NOT_ENFORCED `BoundaryResult` into one `Finding` (existing path); `to_finding` sets location = exercised tool, evidence = probe class + redacted observation. Make T008 GREEN.
+- [x] T009 [US1] Create `mcpfrisk/checks/ssrf_check.py`: `SsrfCheck(BaseDynamicCheck)`, `check_id="SSRF_CHECK"`, `severity=HIGH`. Discover candidate `(tool, param)` via `session.call("tools/list")` (URL-bearing name / `format: "uri"`); for each, send a CALLBACK probe via `session.call("tools/call", …)` and classify NOT_ENFORCED iff `listener.received(token)` returns a hit. Never raises (→ INCONCLUSIVE probe).
+- [x] T010 [US1] Register `SsrfCheck` in `mcpfrisk/checks/registry.py` `DYNAMIC_CHECKS` (single entry — Constitution II).
+- [x] T011 [US1] Confirm `DynamicRunner.run(target)` converts the NOT_ENFORCED `BoundaryResult` into one `Finding` (existing path); `to_finding` sets location = exercised tool, evidence = probe class + redacted observation. Make T008 GREEN.
 
 **Checkpoint**: US1 fully functional — vulnerable fixture is flagged via a real callback. MVP deliverable.
 

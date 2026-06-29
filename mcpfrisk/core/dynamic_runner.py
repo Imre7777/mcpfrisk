@@ -28,6 +28,14 @@ _INVALID_TOKEN = "Bearer not-a-real-token"
 _HTTP_SCHEMES = ("http://", "https://")
 
 
+class DynamicTransportError(Exception):
+    """Der Ziel-Server war nicht erreichbar / antwortete nicht verwertbar.
+
+    Bewusst eine eigene Klasse, damit dynamische Checks Transportfehler gezielt
+    abfangen und als INCONCLUSIVE einordnen können (Prinzip III: ein Fehler ist
+    nie ein 'sicher')."""
+
+
 class DynamicSession:
     """Dünner Handle auf den Ziel-Server mit einer zeitbegrenzten Probe-Methode."""
 
@@ -83,6 +91,71 @@ class DynamicSession:
             operation, condition, BoundaryOutcome.INCONCLUSIVE,
             f"HTTP {status} (unerwartet, keine klare Auth-Antwort)",
         )
+
+    def call(
+        self,
+        method: str,
+        params: dict | None = None,
+        timeout_s: float | None = None,
+    ) -> dict:
+        """Generischer JSON-RPC-Aufruf über den HTTP-Transport (z.B. tools/list,
+        tools/call). Liefert das geparste `result`-Objekt zurück.
+
+        Additiv und allgemein -- jeder künftige dynamische Check kann darüber
+        Operationen am Server ausführen. Wirft bei Transportfehlern eine
+        DynamicTransportError (der aufrufende Check macht daraus INCONCLUSIVE);
+        ändert das bestehende probe(...) nicht."""
+        if not self.is_http:
+            raise DynamicTransportError("non-HTTP target (z.B. stdio): kein HTTP-JSON-RPC")
+
+        timeout = timeout_s if timeout_s is not None else self.timeout_s
+        body = json.dumps(
+            {"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}
+        ).encode("utf-8")
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        }
+        request = urllib.request.Request(  # noqa: S310 - scheme validated above
+            self.target, data=body, headers=headers, method="POST"
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                raw = response.read()
+        except urllib.error.HTTPError as exc:
+            raw = exc.read() or b""  # 4xx/5xx koennen dennoch eine JSON-RPC-Antwort tragen
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            reason = getattr(exc, "reason", exc)
+            raise DynamicTransportError(f"{type(exc).__name__} ({reason})") from exc
+
+        return self._parse_jsonrpc_result(raw)
+
+    @staticmethod
+    def _parse_jsonrpc_result(raw: bytes) -> dict:
+        """Extrahiert das `result`-Objekt aus einer JSON- oder SSE-Antwort.
+
+        HTTP-MCP-Server antworten teils als text/event-stream (Zeilen mit
+        'data: {...}'). Wir parsen beide Formen best-effort; nicht-parsebare
+        Antworten liefern {} (der Check wertet das als 'nichts gefunden')."""
+        text = raw.decode("utf-8", errors="replace").strip()
+        if not text:
+            return {}
+        payload: dict | None = None
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            for line in text.splitlines():
+                line = line.strip()
+                if line.startswith("data:"):
+                    try:
+                        payload = json.loads(line[len("data:"):].strip())
+                        break
+                    except json.JSONDecodeError:
+                        continue
+        if not isinstance(payload, dict):
+            return {}
+        result = payload.get("result")
+        return result if isinstance(result, dict) else {}
 
 
 class DynamicRunner:

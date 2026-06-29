@@ -21,12 +21,11 @@ and report path are reused unchanged.
 
 **Language/Version**: Python 3.10+ (matches existing project floor).
 
-**Primary Dependencies**: stdlib only for the check itself — `http.server`/`socketserver` in
-a background thread for the callback listener, `urllib`/`json` for `tools/list` + `tools/call`
-JSON-RPC over the existing HTTP transport. The optional `mcp` SDK already declared under the
-`dynamic` extra (introduced for AUTH_BOUNDARY) may be used to speak the protocol where it
-simplifies tool discovery, but no NEW third-party dependency is required. Tier 1 install stays
-dependency-free.
+**Primary Dependencies**: **stdlib only** — `http.server` in a background thread for the
+callback listener, `urllib`/`json` for `tools/list` + `tools/call` JSON-RPC over the existing
+HTTP transport. This matches reality in the codebase: AUTH_BOUNDARY is itself stdlib-`urllib`
+(no `dynamic`/`mcp` extra was ever added; `pyproject.toml` declares only `jsts` + `dev`). So
+SSRF_CHECK adds **no new dependency at all** and Tier 1 stays dependency-free.
 
 **Storage**: N/A (no persistence; the callback listener holds in-memory hit records only).
 

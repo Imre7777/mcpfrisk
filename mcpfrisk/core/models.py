@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from typing import Protocol, runtime_checkable
 
 
 class Severity(str, Enum):
@@ -124,13 +125,56 @@ class AuthProbe:
         }
 
 
+class ProbeClass(str, Enum):
+    """Welche Art Ziel einem URL-akzeptierenden Tool untergeschoben wird --
+    also *was* eine SSRF-Probe jeweils beweist."""
+
+    CALLBACK = "callback"  # http://127.0.0.1:<listener>/<token> -> Server holt beliebige URL
+    METADATA = "metadata"  # 169.254.169.254/... -> Versuch auf Cloud-Metadata
+    LOOPBACK = "loopback"  # 127.0.0.1:<reserved> -> Versuch auf Loopback-Dienst
+    REDIRECT = "redirect"  # öffentliche URL, die auf den Callback umleitet (Redirect-Bypass)
+
+
+@dataclass
+class UrlFetchProbe:
+    """Ein einzelner SSRF-Versuch gegen ein Tool/einen Parameter.
+
+    Strukturell kompatibel zu AuthProbe (besitzt `outcome` + `to_dict()`), damit
+    BoundaryResult beide Probe-Arten ohne Sonderfall aggregieren kann."""
+
+    tool: str
+    parameter: str
+    probe_class: ProbeClass
+    outcome: BoundaryOutcome
+    observed: str  # kurze, secret-bereinigte Zusammenfassung (Prinzip V)
+
+    def to_dict(self) -> dict:
+        return {
+            "tool": self.tool,
+            "parameter": self.parameter,
+            "probe_class": self.probe_class.value,
+            "outcome": self.outcome.value,
+            "observed": self.observed,
+        }
+
+
+@runtime_checkable
+class DynamicProbe(Protocol):
+    """Gemeinsames Minimal-Interface aller Tier-2-Proben (AuthProbe, UrlFetchProbe):
+    ein `outcome` und eine serialisierbare Form. So bleibt BoundaryResult generisch."""
+
+    outcome: BoundaryOutcome
+
+    def to_dict(self) -> dict: ...
+
+
 @dataclass
 class BoundaryResult:
     """Aggregiertes Verdikt für einen Ziel-Server, plus die Belege (Probes)."""
 
     target: str
     check_id: str = ""
-    probes: list[AuthProbe] = field(default_factory=list)
+    probes: list[DynamicProbe] = field(default_factory=list)
     outcome: BoundaryOutcome = field(init=False)
 
     def __post_init__(self) -> None:
@@ -144,7 +188,7 @@ class BoundaryResult:
             return BoundaryOutcome.ENFORCED
         return BoundaryOutcome.INCONCLUSIVE
 
-    def failing_probe(self) -> AuthProbe | None:
+    def failing_probe(self) -> DynamicProbe | None:
         for p in self.probes:
             if p.outcome == BoundaryOutcome.NOT_ENFORCED:
                 return p
