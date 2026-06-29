@@ -44,7 +44,25 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _make_output_utf8_safe() -> None:
+    """Prevent UnicodeEncodeError on legacy consoles (e.g. Windows cp1252).
+
+    The report uses non-ASCII status glyphs; on a non-UTF-8 console writing them
+    would raise and crash the run. Reconfigure to UTF-8 with replacement so output
+    degrades gracefully instead of aborting.
+    """
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _make_output_utf8_safe()
     parser = build_parser()
     args = parser.parse_args(argv)
 
