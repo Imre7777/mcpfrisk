@@ -114,8 +114,21 @@ class CommandInjectionCheck(BaseCheck):
         if language is SourceLanguage.PYTHON:
             shell = call.keywords.get("shell")
             shell_true = shell is not None and shell.is_truthy_constant
-            if first.is_array and not shell_true:
-                return None, ""
+            if first.is_array:
+                if not shell_true:
+                    return None, ""
+                # Array-Befehl + shell=True: kein interpolierter String, also kein
+                # direkter Injection-Pfad. shell=True ist hier redundant/irreführend.
+                # Laut Severity-Rubrik (Prinzip V) ein Best-Practice-Verstoß = MEDIUM,
+                # NICHT CRITICAL. Der Befund wird weiterhin gemeldet (Prinzip III).
+                return (
+                    Severity.MEDIUM,
+                    f"{call.callee} übergibt eine Argument-Liste, setzt aber "
+                    "redundant shell=True. Das ist kein interpolierter Befehl "
+                    "(kein direkter RCE-Pfad), sollte aber bereinigt werden -- "
+                    "shell=True entfernen, damit kein versehentlicher Shell-"
+                    "Kontext entsteht.",
+                )
             if shell_true:
                 if first.is_constant_string:
                     return (

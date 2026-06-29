@@ -19,6 +19,7 @@ from mcpfrisk.core.sourcetree.model import (
     StringLiteral,
     ToolDefinition,
     UnparsedModel,
+    condense_snippet,
 )
 
 _ENV_HINTS = ("os.environ", "os.getenv", "getenv(", "process.env", "dotenv")
@@ -88,13 +89,21 @@ class PythonSourceModel(SourceModel):
             a.has_interpolation = True
         return a
 
+    def _call_snippet(self, node: ast.AST) -> str:
+        """Vollständiger Aufruf als kompaktes Snippet (mehrzeilen-fest). Fällt auf
+        die physische Startzeile zurück, falls kein Quell-Segment ermittelbar ist."""
+        seg = self._segment(node)
+        if seg:
+            return condense_snippet(seg)
+        return self._snippet(getattr(node, "lineno", 0))
+
     def _call(self, node: ast.Call) -> CallSite:
         args = [self._arg(a) for a in node.args]
         keywords = {kw.arg: self._arg(kw.value) for kw in node.keywords if kw.arg}
         return CallSite(
             callee=self._callee_name(node.func),
             line=node.lineno,
-            snippet=self._snippet(node.lineno),
+            snippet=self._call_snippet(node),
             args=args,
             keywords=keywords,
         )

@@ -17,6 +17,22 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
+# Snippet-Obergrenze: lang genug, um einen mehrzeiligen Aufruf vollständig zu
+# zeigen, kurz genug, um den Report nicht zu fluten (Prinzip V: verwertbarer Beleg).
+_SNIPPET_MAX_LEN = 200
+
+
+def condense_snippet(text: str, max_len: int = _SNIPPET_MAX_LEN) -> str:
+    """Macht aus einem (potenziell mehrzeiligen) Quelltext ein kompaktes,
+    einzeiliges Snippet: alle Whitespace-Folgen werden zu einem Leerzeichen,
+    bei Überlänge wird mit ``…`` gekürzt. Sprach-agnostisch, von beiden Adaptern
+    genutzt, damit ein über mehrere Zeilen umgebrochener Aufruf als vollständiger
+    Beleg sichtbar bleibt statt nur als erste physische Zeile."""
+    collapsed = " ".join(text.split())
+    if len(collapsed) <= max_len:
+        return collapsed
+    return collapsed[: max_len - 1].rstrip() + "…"
+
 
 class SourceLanguage(str, Enum):
     PYTHON = "python"

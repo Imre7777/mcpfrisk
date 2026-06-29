@@ -279,6 +279,15 @@ Priorisiert nach Recherche-Relevanz:
 - ~~JS/TS-Abdeckung auf alle Checks ausweiten~~ **ERLEDIGT** (Feature
   `002-jsts-ast-coverage`): alle Code-Checks decken JS/TS per AST über den
   sprach-agnostischen `core/sourcetree`-Port ab (optionales `jsts`-Extra).
+- ~~Befund-Präzision aus Real-Repo-Validierung~~ **ERLEDIGT** (Feature
+  `004-finding-precision`): Severity-Kalibrierung (`subprocess.run([cmd],
+  shell=True)` → MEDIUM statt CRITICAL, da kein interpolierter Befehl),
+  vollständige mehrzeilen-feste Snippets (`condense_snippet` im sourcetree-Port)
+  und ein PATH_TRAVERSAL-Triage-Hinweis, wenn das Modul eine *separate*
+  Validierungsfunktion besitzt. **Wichtig:** rein additiv/kalibrierend — kein
+  Finding wird unterdrückt, keine Pfade ausgeschlossen (Prinzip III + die
+  "never exclude paths containing test"-Lesson). Validiert gegen
+  `modelcontextprotocol/{servers,python-sdk}` und `egoist/fetch-mcp`.
 - GitHub Action als eigenständiges, wiederverwendbares Composite-Action
   veröffentlichen (`uses: <user>/mcpfrisk-action@v1`), nicht nur der
   rohe CI-Workflow in diesem Repo.

@@ -67,11 +67,35 @@ class PathTraversalCheck(BaseCheck):
             model = analyze(file_path)
             if model is None or not model.ok:
                 continue
-            for func in model.functions():
-                findings.extend(self._scan_function(model, func))
+            functions = model.functions()
+            # Triage-Kontext (US3): Funktionen im selben Modul, deren Körper eine
+            # erkennbare Pfad-Validierung enthält. Das Taint-Tracking ist bewusst
+            # intra-prozedural -- validiert ein Server in einer SEPARATEN Funktion
+            # (z.B. validatePath()), sieht der Check das nicht und meldet (korrekt
+            # nach Prinzip III) trotzdem. Statt zu unterdrücken, hängen wir einen
+            # Hinweis an, damit der Reviewer einen wahrscheinlichen FP schnell einordnet.
+            module_validators = self._module_validators(functions)
+            for func in functions:
+                findings.extend(self._scan_function(model, func, module_validators))
         return findings
 
-    def _scan_function(self, model: SourceModel, func: FunctionDef) -> list[Finding]:
+    def _module_validators(self, functions: list[FunctionDef]) -> list[str]:
+        """Namen der Funktionen, deren (kommentar-bereinigter) Körper einen
+        Validierungs-Hinweis enthält. Kommentar-Stripping verhindert, dass ein
+        Hinweis-Wort in einem Kommentar fälschlich als 'Validierung existiert' zählt."""
+        names: list[str] = []
+        for f in functions:
+            code_only = self._strip_comments(f.body_text)
+            if any(hint in code_only for hint in SAFE_VALIDATION_HINTS):
+                names.append(f.name)
+        return names
+
+    def _scan_function(
+        self,
+        model: SourceModel,
+        func: FunctionDef,
+        module_validators: list[str] | None = None,
+    ) -> list[Finding]:
         path_like = {
             p for p in func.params
             if any(kw in p.lower() for kw in PATH_PARAM_KEYWORDS)
@@ -89,6 +113,11 @@ class PathTraversalCheck(BaseCheck):
             if assign.referenced_names & tainted:
                 tainted.add(assign.target_name)
 
+        # Validierungsfunktionen im Modul, die NICHT diese Funktion selbst sind.
+        external_validators = [
+            v for v in (module_validators or []) if v != func.name
+        ]
+
         findings: list[Finding] = []
         for call in func.body_calls:
             if not self._is_file_open(model.language, call.callee):
@@ -96,7 +125,10 @@ class PathTraversalCheck(BaseCheck):
             uses_tainted = any(arg.referenced_names & tainted for arg in call.args)
             if uses_tainted and not has_validation:
                 findings.append(
-                    self._make_finding(model, call.line, call.snippet, func.name, path_like)
+                    self._make_finding(
+                        model, call.line, call.snippet, func.name, path_like,
+                        external_validators,
+                    )
                 )
         return findings
 
@@ -128,6 +160,7 @@ class PathTraversalCheck(BaseCheck):
         snippet: str,
         func_name: str,
         params: set[str],
+        external_validators: list[str] | None = None,
     ) -> Finding:
         param_list = ", ".join(sorted(params))
         is_python = model.language is SourceLanguage.PYTHON
@@ -142,17 +175,27 @@ class PathTraversalCheck(BaseCheck):
             "result.startsWith(base), dass er im erlaubten Verzeichnis bleibt. "
             "Lehne '..' und absolute Pfade explizit ab."
         )
+        description = (
+            f"Die Funktion '{func_name}' nimmt einen dateipfad-artigen "
+            f"Parameter ({param_list}) entgegen und übergibt ihn an eine "
+            "Datei-öffnende Funktion. Es wurde keine erkennbare "
+            "Pfad-Normalisierung/Sandboxing-Prüfung (z.B. realpath, "
+            "is_relative_to, resolve, startsWith) im Funktionskörper gefunden."
+        )
+        if external_validators:
+            vlist = ", ".join(f"'{v}'" for v in sorted(set(external_validators)))
+            description += (
+                f" Triage-Hinweis: Dieses Modul definiert separate "
+                f"Validierungsfunktion(en) ({vlist}). Falls der Pfad bereits dort "
+                "geprüft wird, BEVOR er hierher gelangt, könnte dies ein False "
+                "Positive sein -- bitte verifizieren. (Das intra-prozedurale "
+                "Taint-Tracking sieht funktionsübergreifende Validierung nicht.)"
+            )
         return Finding(
             check_id=self.check_id,
             severity=Severity.HIGH,
             title=f"Mögliche Path Traversal in Tool-Funktion '{func_name}'",
-            description=(
-                f"Die Funktion '{func_name}' nimmt einen dateipfad-artigen "
-                f"Parameter ({param_list}) entgegen und übergibt ihn an eine "
-                "Datei-öffnende Funktion. Es wurde keine erkennbare "
-                "Pfad-Normalisierung/Sandboxing-Prüfung (z.B. realpath, "
-                "is_relative_to, resolve, startsWith) im Funktionskörper gefunden."
-            ),
+            description=description,
             file_path=model.path,
             line_number=lineno,
             snippet=snippet,

@@ -22,6 +22,7 @@ from mcpfrisk.core.sourcetree.model import (
     StringLiteral,
     ToolDefinition,
     UnparsedModel,
+    condense_snippet,
 )
 
 _ENV_HINTS = ("process.env", "import.meta.env", "dotenv")
@@ -155,7 +156,12 @@ class JsTsSourceModel(SourceModel):
         callee = self._member_name(node.child_by_field_name("function"))
         argnode = node.child_by_field_name("arguments")
         args = [self._arg(a) for a in argnode.named_children] if argnode else []
-        return CallSite(callee=callee, line=self._line(node), snippet=self._snippet(node), args=args)
+        return CallSite(
+            callee=callee,
+            line=self._line(node),
+            snippet=condense_snippet(self._text(node)),
+            args=args,
+        )
 
     def _assignment_from(self, node) -> Assignment | None:
         if node.type == "variable_declarator":
