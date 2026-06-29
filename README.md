@@ -99,6 +99,13 @@ gemeldet — weder Pass noch Finding, und niemals stillschweigend als „sicher"
 - **AUTH_BOUNDARY** ✅ — sendet Anfragen ohne/mit falschem Token und prüft,
   ob der Server wirklich 401/403 liefert statt durchzulassen (stdlib-only,
   keine externe Abhängigkeit)
+- **SSRF_CHECK** ✅ — entdeckt URL-akzeptierende Tools und beweist *out-of-band*,
+  ob der Server zu Requests gegen kontrollierte/interne Ziele gebracht werden
+  kann: McpFrisk startet einen einmaligen Loopback-Callback-Listener und wertet
+  einen eingehenden Treffer als Beweis (keine Heuristik). Deckt direkte Fetches
+  und Redirect-Bypass ab und spricht das Cloud-Metadata-Ziel `169.254.169.254`
+  an. Ein korrekt abgesicherter Server (Denylist + Post-DNS-IP-Prüfung) bleibt
+  ohne Befund. Stdlib-only (CWE-918).
 
 **Geplant** (Architektur via `BaseDynamicCheck`/`DynamicRunner` vorhanden):
 
@@ -106,8 +113,6 @@ gemeldet — weder Pass noch Finding, und niemals stillschweigend als „sicher"
   Namespace-Leckage zwischen Tools (z.B. Student/Teacher-Trennung)
 - **SCHEMA_FUZZING** — malformed/oversized Parameter, prüft auf Crashes
   oder Stacktrace-Leaks
-- **SSRF_CHECK** — prüft, ob URL-fetchende Tools interne/Cloud-Metadata-
-  Endpunkte erreichen können (z.B. `169.254.169.254`)
 - **ERROR_LEAKAGE** — prüft Fehlerantworten auf Pfade, Stacktraces,
   DB-Schema-Informationen
 - **RATE_LIMITING** — parallele Last, prüft auf fehlende Constraints

@@ -78,17 +78,22 @@ mcpfrisk scan ./pfad/zum/server --json report.json --fail-on critical
 ```
 mcpfrisk/
 ├── core/
-│   ├── models.py        # Finding, Severity, ScanResult — die Datenmodelle
-│   ├── base_check.py     # BaseCheck (statisch) / BaseDynamicCheck (Tier 2, noch leer)
-│   ├── runner.py         # Orchestriert: holt alle Checks aus der Registry, führt sie aus
-│   └── report.py         # Terminal-Ausgabe + JSON-Export
+│   ├── models.py         # Finding, Severity, ScanResult + Tier-2-Modelle (BoundaryOutcome, *Probe)
+│   ├── base_check.py      # BaseCheck (statisch) / BaseDynamicCheck (Tier 2, implementiert)
+│   ├── runner.py          # Statische Orchestrierung
+│   ├── dynamic_runner.py  # Tier-2-Orchestrierung: DynamicRunner + DynamicSession (stdlib)
+│   ├── sourcetree/        # SourceModel-Port + Python-/tree-sitter-Adapter (JS/TS, Tier 1)
+│   └── report.py          # Terminal-Ausgabe + JSON-Export (statisch + dynamisch)
 ├── checks/
-│   ├── registry.py        # STATIC_CHECKS-Liste -- HIER neue Checks eintragen
+│   ├── registry.py        # STATIC_CHECKS + DYNAMIC_CHECKS -- HIER neue Checks eintragen
 │   ├── command_injection.py
 │   ├── path_traversal.py
 │   ├── hardcoded_secrets.py
-│   └── tool_poisoning.py
-└── cli.py                 # argparse Entry Point, ruft runner.py + report.py
+│   ├── tool_poisoning.py
+│   ├── auth_boundary.py    # Tier 2: AUTH_BOUNDARY
+│   ├── ssrf_check.py        # Tier 2: SSRF_CHECK (out-of-band Callback)
+│   └── _ssrf_callback.py    # Loopback-Callback-Listener für SSRF_CHECK
+└── cli.py                 # argparse Entry Point (scan + probe), ruft runner/dynamic_runner + report
 ```
 
 ### Designprinzip: Plugin-Architektur (Open/Closed)
@@ -221,18 +226,25 @@ genug für Solo-Maintainer, CI-first.**
 
 ### Tier 2 — Dynamische Checks (brauchen einen laufenden MCP-Server)
 
-Architektur dafür ist vorbereitet (`BaseDynamicCheck` in
-`core/base_check.py`), aber **noch nicht implementiert**. Diese Checks
-müssen sich per stdio oder HTTP mit einem echten laufenden Server
-verbinden (z.B. über das `mcp`-Python-SDK als Client), nicht nur den
-Quellcode lesen. Das braucht einen neuen `DynamicRunner` analog zu
-`core/runner.py`.
+Architektur implementiert (`BaseDynamicCheck` in `core/base_check.py`,
+`DynamicRunner` + `DynamicSession` in `core/dynamic_runner.py`, eigene
+`DYNAMIC_CHECKS`-Registry, Drei-Zustands-Verdikt `BoundaryOutcome`).
+Diese Checks verbinden sich per HTTP mit einem echten laufenden Server
+(stdlib `urllib`/`http.server` — bewusst **ohne** externe Abhängigkeit,
+kein `dynamic`/`mcp`-Extra nötig), nicht nur Quellcode lesen.
 
 Priorisiert nach Recherche-Relevanz:
 
-1. **`AUTH_BOUNDARY`** — Requests ohne/mit falschem Token senden, prüfen
-   ob der Server wirklich 401/403 liefert statt durchzulassen. Größte
-   Hebelwirkung laut Recherche (38-41% ohne Auth).
+1. **`AUTH_BOUNDARY`** ✅ **ERLEDIGT** — Requests ohne/mit falschem Token
+   senden, prüfen ob der Server wirklich 401/403 liefert. Größte
+   Hebelwirkung laut Recherche (38-41% ohne Auth). (Spec: `001-auth-boundary`.)
+4. **`SSRF_CHECK`** ✅ **ERLEDIGT** — entdeckt URL-akzeptierende Tools und
+   beweist *out-of-band* über einen einmaligen Loopback-Callback-Listener,
+   ob der Server zu Requests gegen kontrollierte/interne Ziele gebracht
+   werden kann (direkte Fetches + Redirect-Bypass; spricht zusätzlich
+   `169.254.169.254` an, CWE-918). Ein eingehender Callback-Treffer ist der
+   Beweis (keine Heuristik); ein abgesicherter Server (Denylist + Post-DNS-
+   IP-Prüfung) bleibt befundfrei. Spec: `003-ssrf-check`.
 2. **`RBAC_CROSS_TENANT`** — simuliert mehrere Rollen/Nutzer-Kontexte,
    prüft auf Namespace-Leckage zwischen Tools (z.B. liefert Tool A für
    Rolle "Student" Daten, die nur Rolle "Teacher" sehen sollte). Das
@@ -241,9 +253,6 @@ Priorisiert nach Recherche-Relevanz:
    hoher persönlicher Erfahrungswert hier.
 3. **`SCHEMA_FUZZING`** — malformed/oversized/typenfehlerhafte Parameter
    senden, prüfen auf Crashes oder Stacktrace-Leaks in Fehlerantworten.
-4. **`SSRF_CHECK`** — prüft, ob URL-fetchende Tools interne/Cloud-Metadata-
-   Endpunkte erreichen können (klassischer Test: `169.254.169.254`,
-   das AWS/GCP-Metadata-Endpoint).
 5. **`ERROR_LEAKAGE`** — Fehlerantworten auf Pfade, Stacktraces,
    DB-Schema-Informationen prüfen.
 6. **`RATE_LIMITING`** — parallele Last erzeugen, auf fehlende

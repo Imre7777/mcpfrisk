@@ -82,6 +82,16 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def _is_direct_blocked(url: str) -> bool:
+    """Filter des Redirect-Bypass-Servers: erkennt nur das *direkt* übergebene
+    bekannt-interne Ziel (Callback-Pfad oder Metadata-IP). Eine /redirect/-URL
+    rutscht durch -- das ist genau der zu testende Bug."""
+    parsed = urlparse(url)
+    if (parsed.hostname or "") == "169.254.169.254":
+        return True
+    return parsed.path.startswith("/cb/")
+
+
 class _BaseSsrfHandler(BaseHTTPRequestHandler):
     mode = "vulnerable"
 
@@ -104,10 +114,12 @@ class _BaseSsrfHandler(BaseHTTPRequestHandler):
                 return "refused: internal/reserved target blocked"
             return _fetch(url, follow_redirects=True)
         if self.mode == "redirect":
-            # Validiert NUR die initiale URL, folgt dann Redirects ohne erneute
-            # Prüfung -- klassischer First-Host-Only-Bypass.
-            if _is_blocked_target(url):
-                return "refused: internal/reserved target blocked"
+            # Naiver Filter: blockt nur das *direkt* übergebene, offensichtlich
+            # interne Ziel (Callback-Pfad / Metadata-IP), folgt dann aber HTTP-
+            # Redirects ohne erneute Prüfung -- klassischer First-Request-Only-
+            # Bypass (eine auf den Callback umleitende URL rutscht durch).
+            if _is_direct_blocked(url):
+                return "refused: direct internal target blocked"
             return _fetch(url, follow_redirects=True)
         return "noop"  # pragma: no cover
 
@@ -122,6 +134,19 @@ class _BaseSsrfHandler(BaseHTTPRequestHandler):
         method = req.get("method")
 
         if method == "tools/list":
+            if self.mode == "no_url_tool":
+                self._send_result(rid, {
+                    "tools": [{
+                        "name": "echo",
+                        "description": "Echo a message back.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {"message": {"type": "string"}},
+                            "required": ["message"],
+                        },
+                    }]
+                })
+                return
             self._send_result(rid, {
                 "tools": [{
                     "name": "fetch_url",

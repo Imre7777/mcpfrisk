@@ -65,6 +65,13 @@ class SsrfCheck(BaseDynamicCheck):
         with CallbackListener() as listener:
             for tool, parameter in candidates:
                 probes.append(self._callback_probe(session, listener, tool, parameter))
+                probes.append(self._redirect_probe(session, listener, tool, parameter))
+            # FR-004: zusätzlich ein reserviertes Cloud-Metadata-Ziel ansprechen
+            # (einmal, am ersten Kandidaten). Reine Versuchs-Evidenz -- aus einer
+            # Nicht-Cloud-Testumgebung ist der Fetch nicht über den Listener
+            # verifizierbar, daher kein eigenständiges Verdikt.
+            first_tool, first_param = candidates[0]
+            probes.append(self._metadata_probe(session, first_tool, first_param))
         return BoundaryResult(target=session.target, check_id=self.check_id, probes=probes)
 
     # -- discovery ---------------------------------------------------------
@@ -122,11 +129,66 @@ class SsrfCheck(BaseDynamicCheck):
             "kein Callback beobachtet (Ziel offenbar abgelehnt)",
         )
 
-    @staticmethod
-    def _hit_probe(tool: str, parameter: str, token: str) -> UrlFetchProbe:
+    def _redirect_probe(
+        self,
+        session: DynamicSession,
+        listener: CallbackListener,
+        tool: str,
+        parameter: str,
+    ) -> UrlFetchProbe:
+        """US3: gibt dem Tool eine URL, die per 302 auf die Callback-URL umleitet.
+        Greift bei Servern, die nur die initiale URL prüfen und Redirects ungeprüft
+        folgen (First-Request-Only-Bypass / DNS-Rebinding-Klasse)."""
+        token, _ = listener.new_probe_url()
+        redirect = listener.redirect_url(token)
+        try:
+            session.call("tools/call", {"name": tool, "arguments": {parameter: redirect}})
+        except DynamicTransportError as exc:
+            hit = listener.received(token, min(0.5, session.timeout_s))
+            if hit is not None:
+                return self._hit_probe(tool, parameter, token, ProbeClass.REDIRECT)
+            return UrlFetchProbe(
+                tool, parameter, ProbeClass.REDIRECT, BoundaryOutcome.INCONCLUSIVE,
+                f"tools/call fehlgeschlagen: {exc}",
+            )
+        hit = listener.received(token, session.timeout_s)
+        if hit is not None:
+            return self._hit_probe(tool, parameter, token, ProbeClass.REDIRECT)
         return UrlFetchProbe(
-            tool, parameter, ProbeClass.CALLBACK, BoundaryOutcome.NOT_ENFORCED,
-            f"Server holte die Callback-URL (Token …{token[-8:]})",
+            tool, parameter, ProbeClass.REDIRECT, BoundaryOutcome.ENFORCED,
+            "kein Callback über Redirect beobachtet (Redirect-Ziel offenbar geprüft)",
+        )
+
+    def _metadata_probe(
+        self,
+        session: DynamicSession,
+        tool: str,
+        parameter: str,
+    ) -> UrlFetchProbe:
+        """FR-004: spricht das Link-Local-Cloud-Metadata-Ziel an. Nur Versuchs-
+        Evidenz -- ohne Cloud-Umgebung nicht über den Listener verifizierbar,
+        daher ENFORCED-neutral (kein eigenständiges Finding; der CALLBACK-Beweis
+        deckt die Fetch-Fähigkeit bereits ab)."""
+        metadata_url = "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
+        try:
+            session.call("tools/call", {"name": tool, "arguments": {parameter: metadata_url}})
+            observed = "Metadata-Ziel gesendet; Reichbarkeit aus Testumgebung nicht verifizierbar"
+        except DynamicTransportError as exc:
+            observed = f"Metadata-Probe nicht zustellbar: {exc}"
+        return UrlFetchProbe(
+            tool, parameter, ProbeClass.METADATA, BoundaryOutcome.ENFORCED, observed,
+        )
+
+    @staticmethod
+    def _hit_probe(
+        tool: str, parameter: str, token: str,
+        probe_class: ProbeClass = ProbeClass.CALLBACK,
+    ) -> UrlFetchProbe:
+        verb = "folgte einem Redirect auf die Callback-URL" if probe_class == ProbeClass.REDIRECT \
+            else "holte die Callback-URL"
+        return UrlFetchProbe(
+            tool, parameter, probe_class, BoundaryOutcome.NOT_ENFORCED,
+            f"Server {verb} (Token …{token[-8:]})",
         )
 
     def _inconclusive(self, session: DynamicSession, reason: str) -> BoundaryResult:

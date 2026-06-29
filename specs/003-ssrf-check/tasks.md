@@ -16,6 +16,15 @@ vulnerable-fixture and clean-fixture test.
 **Organization**: Tasks grouped by user story (US1 detect, US2 clean-pass, US3 redirect-bypass)
 so each is independently testable.
 
+> **STATUS: COMPLETE.** Implemented stdlib-only (no `dynamic`/`mcp` extra — that matches the
+> codebase: AUTH_BOUNDARY is `urllib`-based too). Notes on consolidation vs. the plan:
+> the three fixture servers are modes of one `tests/fixtures/ssrf_servers.py`
+> (`vulnerable`/`clean`/`redirect`/`no_url_tool`); all tests live in `tests/test_ssrf_check.py`.
+> The metadata/loopback exercise (FR-004) is one METADATA attempt probe (evidence-only, the
+> out-of-band CALLBACK proof already establishes arbitrary-fetch capability). CI (T022) needed
+> no change — the main + `test-without-jsts` jobs already run the full `pytest tests/` which
+> includes `test_ssrf_check.py` (stdlib, no extra). Full suite 68 green.
+
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel (different files, no incomplete dependencies)
@@ -34,7 +43,7 @@ SSRF_CHECK reuses the Tier 2 dynamic path built for AUTH_BOUNDARY.
 
 - [x] T001 Confirm no new dependency is needed: there is no `dynamic` extra in `pyproject.toml`; AUTH_BOUNDARY and SSRF_CHECK are both stdlib-only (`http.server` + `urllib`). SSRF adds nothing to `pyproject.toml` (Constitution IV holds for this Tier 2 check too).
 - [x] T002 [P] Confirm `pytest` collects `tests/test_ssrf_check.py` and `tests/fixtures/ssrf_*` via existing `[tool.pytest.ini_options]`.
-- [ ] T003 [P] Add an "SSRF_CHECK" subsection to `README.md` (Tier 2): what it does (out-of-band callback proof), `mcpfrisk probe` usage, and `--skip SSRF_CHECK`.
+- [x] T003 [P] Add an "SSRF_CHECK" subsection to `README.md` (Tier 2): what it does (out-of-band callback proof), `mcpfrisk probe` usage, and `--skip SSRF_CHECK`.
 
 ---
 
@@ -81,12 +90,12 @@ SSRF_CHECK reuses the Tier 2 dynamic path built for AUTH_BOUNDARY.
 
 ### Tests for User Story 2 (write FIRST, confirm RED) ⚠️
 
-- [ ] T012 [P] [US2] Create `tests/fixtures/ssrf_clean_server.py`: a `fetch_url` tool that parses the URL, resolves the host, and refuses loopback/RFC1918/link-local/non-http(s) before fetching (the documented correct fix).
-- [ ] T013 [US2] Add `test_clean_server_is_not_flagged` to `tests/test_ssrf_check.py` — asserts zero findings AND that the listener recorded no hit for any probe (SC-002). Confirm RED where the US1 logic is still too eager.
+- [x] T012 [P] [US2] Create `tests/fixtures/ssrf_clean_server.py`: a `fetch_url` tool that parses the URL, resolves the host, and refuses loopback/RFC1918/link-local/non-http(s) before fetching (the documented correct fix).
+- [x] T013 [US2] Add `test_clean_server_is_not_flagged` to `tests/test_ssrf_check.py` — asserts zero findings AND that the listener recorded no hit for any probe (SC-002). Confirm RED where the US1 logic is still too eager.
 
 ### Implementation for User Story 2
 
-- [ ] T014 [US2] Ensure `SsrfCheck` only flags on an observed callback hit (not on tool-call success/error), so the guarded fixture (which never calls back) aggregates to ENFORCED ⇒ no finding. Make T013 GREEN without breaking T008.
+- [x] T014 [US2] Ensure `SsrfCheck` only flags on an observed callback hit (not on tool-call success/error), so the guarded fixture (which never calls back) aggregates to ENFORCED ⇒ no finding. Make T013 GREEN without breaking T008.
 
 **Checkpoint**: US1 + US2 both pass — the paired-fixture bar (Constitution VI) is met for SSRF.
 
@@ -100,12 +109,12 @@ SSRF_CHECK reuses the Tier 2 dynamic path built for AUTH_BOUNDARY.
 
 ### Tests for User Story 3 (write FIRST, confirm RED) ⚠️
 
-- [ ] T015 [P] [US3] Create `tests/fixtures/ssrf_redirect_server.py`: a `fetch_url` tool that validates only the initial host but follows redirects without re-validation (so a callback URL that 302s to the unique token still fetches).
-- [ ] T016 [US3] Add `test_redirect_bypass_is_flagged` to `tests/test_ssrf_check.py` using `listener.redirect_url(token)` (SC-003). Confirm RED.
+- [x] T015 [P] [US3] Create `tests/fixtures/ssrf_redirect_server.py`: a `fetch_url` tool that validates only the initial host but follows redirects without re-validation (so a callback URL that 302s to the unique token still fetches).
+- [x] T016 [US3] Add `test_redirect_bypass_is_flagged` to `tests/test_ssrf_check.py` using `listener.redirect_url(token)` (SC-003). Confirm RED.
 
 ### Implementation for User Story 3
 
-- [ ] T017 [US3] Add the REDIRECT probe to `mcpfrisk/checks/ssrf_check.py` (supply `listener.redirect_url(token)`); record CALLBACK + REDIRECT (+ METADATA/LOOPBACK attempt evidence) in `BoundaryResult.probes`. Make T016 GREEN.
+- [x] T017 [US3] Add the REDIRECT probe to `mcpfrisk/checks/ssrf_check.py` (supply `listener.redirect_url(token)`); record CALLBACK + REDIRECT (+ METADATA/LOOPBACK attempt evidence) in `BoundaryResult.probes`. Make T016 GREEN.
 
 **Checkpoint**: All three stories independently functional; the OOB-callback advantage is demonstrated.
 
@@ -115,12 +124,12 @@ SSRF_CHECK reuses the Tier 2 dynamic path built for AUTH_BOUNDARY.
 
 **Purpose**: Edge cases, safety, output, and CI — hardening against false negatives.
 
-- [ ] T018 [P] Add `test_no_url_tool_is_inconclusive` and `test_unreachable_server_is_inconclusive` to `tests/test_ssrf_check.py`: a server with no URL-accepting tool, and a dead port, each yield INCONCLUSIVE — never a pass, never a crash (SC-005; FR-008/FR-009).
-- [ ] T019 [P] Add `test_evaluation_is_time_bounded`: a server that accepts the call but never fetches completes within the timeout bound (SC-004; FR-010).
-- [ ] T020 [P] Add `test_probes_target_only_local_and_metadata` (SC-006/FR-012): assert the only non-loopback target ever produced is the well-known metadata IP attempt; no third-party host is contacted by McpFrisk itself.
-- [ ] T021 Ensure secret/PII redaction in `observed` evidence (only a short token suffix, never response bodies) — add an assertion mirroring the existing redaction test.
-- [ ] T022 Update `.github/workflows/ci.yml`: run `tests/test_ssrf_check.py` under the `dynamic` extra in the matrix.
-- [ ] T023 [P] Validate `quickstart.md` end-to-end; update `README.md` Tier 2 section and `CONTEXT.md` (SSRF_CHECK now shipped); run the full `pytest` suite green.
+- [x] T018 [P] Add `test_no_url_tool_is_inconclusive` and `test_unreachable_server_is_inconclusive` to `tests/test_ssrf_check.py`: a server with no URL-accepting tool, and a dead port, each yield INCONCLUSIVE — never a pass, never a crash (SC-005; FR-008/FR-009).
+- [x] T019 [P] Add `test_evaluation_is_time_bounded`: a server that accepts the call but never fetches completes within the timeout bound (SC-004; FR-010).
+- [x] T020 [P] Add `test_probes_target_only_local_and_metadata` (SC-006/FR-012): assert the only non-loopback target ever produced is the well-known metadata IP attempt; no third-party host is contacted by McpFrisk itself.
+- [x] T021 Ensure secret/PII redaction in `observed` evidence (only a short token suffix, never response bodies) — add an assertion mirroring the existing redaction test.
+- [x] T022 Update `.github/workflows/ci.yml`: run `tests/test_ssrf_check.py` under the `dynamic` extra in the matrix.
+- [x] T023 [P] Validate `quickstart.md` end-to-end; update `README.md` Tier 2 section and `CONTEXT.md` (SSRF_CHECK now shipped); run the full `pytest` suite green.
 
 ---
 
