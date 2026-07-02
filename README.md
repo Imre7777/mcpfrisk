@@ -15,10 +15,16 @@ It runs **before** release — unlike tools such as `mcp-scan`, which inspect
 
 - **Static (Tier 1):** AST-based checks for command injection, path traversal,
   hardcoded secrets and tool poisoning — for Python *and* JS/TS.
-- **Dynamic (Tier 2):** probes a **running** server (auth boundary, SSRF,
-  cross-tenant/RBAC leakage) with real proof instead of heuristics.
+- **Dynamic (Tier 2):** six checks probe a **running** server — auth boundary,
+  SSRF, cross-tenant/RBAC leakage, schema fuzzing (crash/leak under malformed
+  input), error-response internals leakage, and rate limiting/resource
+  exhaustion — all evidence-grounded, never a guess.
 - **Stdlib-only core:** the base install ships no external dependencies —
   small attack surface, trivial installation. JS/TS parsing is an optional extra.
+- **Hardened against the servers it's testing:** bounded response sizes, a
+  crash in one check never takes down the rest of the scan, and every
+  transport failure degrades to *inconclusive* — never a false pass or a
+  crashed run, even against a hostile or badly broken target.
 - **CI-ready:** one exit code, one optional JSON report — usable directly as a build gate.
 
 > **New to the project?** Start with [`CONTEXT.md`](./CONTEXT.md) — full
@@ -236,16 +242,24 @@ what's next.
    (tool poisoning, RBAC cross-tenant) that no generic tool knows about.
 4. **Reports never show the full secret.** Even our own output is redacted —
    a scanner must not create a new leak.
+5. **The scanner defends itself against the server it's testing.** Tier 2
+   targets are not yet trusted by definition — a check that raises
+   unexpectedly is caught and degraded to *inconclusive* rather than
+   crashing the whole scan, and both transports cap response size against a
+   hostile/broken server trying to exhaust McpFrisk's own memory.
 
 ## Known limitations (intentional, not a bug)
 
 - Static analysis is a heuristic. AST matching cannot trace full data flow
-  through arbitrarily complex code (the taint tracking here is deliberately
-  simple: one level of intermediate variables, not a full dataflow graph).
-  If a server validates in a *separate* function (e.g. `validatePath()`),
-  `PATH_TRAVERSAL` still reports it (principle: prefer FP over FN) but attaches
-  a **triage hint** pointing at the existing validation function, so a likely
-  false positive is quick to classify.
+  through arbitrarily complex code. Taint tracking follows intermediate
+  assignments (including through nested `if`/`for`/`try` blocks) within a
+  single function, and resolves import aliases (`import x as y`,
+  `from x import y`) when matching dangerous calls — but it is
+  **intra-procedural**: a data flow that crosses a function or module
+  boundary is not followed. If a server validates in a *separate* function
+  (e.g. `validatePath()`), `PATH_TRAVERSAL` still reports it (principle:
+  prefer FP over FN) but attaches a **triage hint** pointing at the existing
+  validation function, so a likely false positive is quick to classify.
 - Severity follows the rubric: a constant argument list with a redundant
   `subprocess.run(..., shell=True)` is a best-practice violation (MEDIUM), not
   a direct RCE path (CRITICAL is reserved for the interpolated command).
