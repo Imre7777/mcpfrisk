@@ -10,6 +10,7 @@ from mcpfrisk.checks.auth_boundary import AuthBoundaryCheck
 from mcpfrisk.checks.command_injection import CommandInjectionCheck
 from mcpfrisk.checks.hardcoded_secrets import HardcodedSecretsCheck
 from mcpfrisk.checks.path_traversal import PathTraversalCheck
+from mcpfrisk.checks.rbac_cross_tenant import RbacCrossTenantCheck
 from mcpfrisk.checks.ssrf_check import SsrfCheck
 from mcpfrisk.checks.tool_poisoning import ToolDescriptionPoisoningCheck
 from mcpfrisk.core.base_check import BaseCheck, BaseDynamicCheck
@@ -27,7 +28,7 @@ STATIC_CHECKS: list[type[BaseCheck]] = [
 DYNAMIC_CHECKS: list[type[BaseDynamicCheck]] = [
     AuthBoundaryCheck,
     SsrfCheck,
-    # RbacCrossTenantCheck,
+    RbacCrossTenantCheck,
     # SchemaFuzzingCheck,
     # ErrorLeakageCheck,
 ]

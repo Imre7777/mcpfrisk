@@ -27,7 +27,11 @@ import subprocess
 import threading
 import time
 
-from mcpfrisk.core.dynamic_runner import DynamicTransportError, extract_jsonrpc_result
+from mcpfrisk.core.dynamic_runner import (
+    DynamicTransportError,
+    IdentityConfig,
+    extract_jsonrpc_result,
+)
 from mcpfrisk.core.models import AuthProbe, BoundaryOutcome, CredentialCondition
 
 _CLIENT_INFO = {"name": "mcpfrisk", "version": "0.1.0"}
@@ -48,9 +52,17 @@ class StdioServerHandle:
     """Kapselt den Server-Subprozess: Spawn (lazy), Reader-Thread, zeilenweises
     Schreiben/Lesen mit id-Korrelation und ein zeitbegrenztes request()."""
 
-    def __init__(self, argv: list[str], timeout_s: float) -> None:
+    def __init__(
+        self,
+        argv: list[str],
+        timeout_s: float,
+        env: dict[str, str] | None = None,
+    ) -> None:
         self.argv = argv
         self.timeout_s = timeout_s
+        # env-Overlay (z.B. identitäts-spezifisches Credential): auf os.environ
+        # gelegt, damit der Subprozess seine Umgebung wie üblich erbt.
+        self.env = {**os.environ, **env} if env else None
         self._proc: subprocess.Popen | None = None
         self._reader: threading.Thread | None = None
         self._lines: queue.Queue = queue.Queue()
@@ -67,6 +79,7 @@ class StdioServerHandle:
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
+                env=self.env,
             )
         except (OSError, ValueError) as exc:
             raise DynamicTransportError(
@@ -163,20 +176,89 @@ class StdioServerHandle:
             self._reader = None
 
 
-class StdioTransport:
-    """stdio-Adapter des Transport-Ports."""
+class _StdioChannel:
+    """Ein Subprozess-Kanal für genau eine Identität (bzw. der Default-Kanal
+    ohne Identität). Kapselt den Handle und die per-Kanal ausgehandelte Ära --
+    verschiedene Identitäten sind verschiedene Prozesse und handeln unabhängig aus."""
 
-    def __init__(self, command: str | list[str], timeout_s: float = 5.0) -> None:
+    def __init__(self, handle: StdioServerHandle) -> None:
+        self.handle = handle
+        self.era: str | None = None  # "modern" | "legacy"
+        self.negotiated = False
+
+    def ensure_negotiated(self, timeout_s: float | None) -> None:
+        if self.negotiated:
+            return
+        self.negotiated = True  # nur einmal versuchen, auch bei Fehlschlag
+
+        # 1) Modern probieren: server/discover mit Metadaten in _meta.
+        try:
+            resp = self.handle.request(
+                "server/discover", {"_meta": _client_meta()}, timeout_s=timeout_s
+            )
+        except DynamicTransportError:
+            resp = None
+
+        if isinstance(resp, dict) and "error" not in resp:
+            self.era = "modern"
+            return
+
+        # 2) Fallback: Legacy-Handshake (initialize + notifications/initialized).
+        self.era = "legacy"
+        try:
+            self.handle.request(
+                "initialize",
+                {
+                    "protocolVersion": _LEGACY_PROTOCOL,
+                    "capabilities": {},
+                    "clientInfo": _CLIENT_INFO,
+                },
+                timeout_s=timeout_s,
+            )
+            self.handle.notify("notifications/initialized")
+        except DynamicTransportError:
+            # Handshake gescheitert -> folgende call()s laufen in den Timeout und
+            # werden vom Check als INCONCLUSIVE gewertet (Prinzip III).
+            pass
+
+
+class StdioTransport:
+    """stdio-Adapter des Transport-Ports.
+
+    Identitäts-bewusst: da stdio keine HTTP-Header kennt, ist eine Identität ein
+    **Env-Overlay** -- pro Identität wird ein eigener Subprozess gestartet
+    (Credential in einer konfigurierbaren Env-Variable, Default `MCP_AUTH_TOKEN`).
+    Das ist der real-world-Weg env-basierter Credentials und hält die
+    Identitäten sauber getrennt. Ohne Identität (`identity=None`) bleibt es ein
+    einzelner Default-Prozess -- exakt das bisherige Verhalten."""
+
+    def __init__(
+        self,
+        command: str | list[str],
+        timeout_s: float = 5.0,
+        identity_config: IdentityConfig | None = None,
+    ) -> None:
         if isinstance(command, str):
-            argv = shlex.split(command, posix=(os.name != "nt"))
+            self._argv = shlex.split(command, posix=(os.name != "nt"))
             self.target = command
         else:
-            argv = list(command)
+            self._argv = list(command)
             self.target = " ".join(command)
         self.timeout_s = timeout_s
-        self._handle = StdioServerHandle(argv, timeout_s)
-        self._era: str | None = None  # "modern" | "legacy"
-        self._negotiated = False
+        self._identity_config = identity_config or IdentityConfig()
+        self._channels: dict[str | None, _StdioChannel] = {}
+
+    def _channel(self, identity: str | None) -> _StdioChannel:
+        if identity in self._channels:
+            return self._channels[identity]
+        env: dict[str, str] | None = None
+        if identity is not None:
+            cred = self._identity_config.identities.get(identity)
+            if cred:
+                env = {self._identity_config.identity_env: cred}
+        channel = _StdioChannel(StdioServerHandle(self._argv, self.timeout_s, env=env))
+        self._channels[identity] = channel
+        return channel
 
     def probe(self, operation: str, condition: CredentialCondition) -> AuthProbe:
         """stdio hat keinen Transport-Level-Auth-Boundary (keine HTTP-Header/Token).
@@ -191,48 +273,17 @@ class StdioTransport:
         method: str,
         params: dict | None = None,
         timeout_s: float | None = None,
+        identity: str | None = None,
     ) -> dict:
-        self._ensure_negotiated(timeout_s)
+        channel = self._channel(identity)
+        channel.ensure_negotiated(timeout_s)
         request_params = dict(params or {})
-        if self._era == "modern":
+        if channel.era == "modern":
             request_params["_meta"] = _client_meta()
-        payload = self._handle.request(method, request_params, timeout_s=timeout_s)
+        payload = channel.handle.request(method, request_params, timeout_s=timeout_s)
         return extract_jsonrpc_result(payload)
 
-    def _ensure_negotiated(self, timeout_s: float | None) -> None:
-        if self._negotiated:
-            return
-        self._negotiated = True  # nur einmal versuchen, auch bei Fehlschlag
-
-        # 1) Modern probieren: server/discover mit Metadaten in _meta.
-        try:
-            resp = self._handle.request(
-                "server/discover", {"_meta": _client_meta()}, timeout_s=timeout_s
-            )
-        except DynamicTransportError:
-            resp = None
-
-        if isinstance(resp, dict) and "error" not in resp:
-            self._era = "modern"
-            return
-
-        # 2) Fallback: Legacy-Handshake (initialize + notifications/initialized).
-        self._era = "legacy"
-        try:
-            self._handle.request(
-                "initialize",
-                {
-                    "protocolVersion": _LEGACY_PROTOCOL,
-                    "capabilities": {},
-                    "clientInfo": _CLIENT_INFO,
-                },
-                timeout_s=timeout_s,
-            )
-            self._handle.notify("notifications/initialized")
-        except DynamicTransportError:
-            # Handshake gescheitert -> folgende call()s laufen in den Timeout und
-            # werden vom Check als INCONCLUSIVE gewertet (Prinzip III).
-            pass
-
     def close(self) -> None:
-        self._handle.close()
+        for channel in self._channels.values():
+            channel.handle.close()
+        self._channels.clear()

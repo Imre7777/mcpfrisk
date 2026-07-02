@@ -158,6 +158,44 @@ class UrlFetchProbe:
         }
 
 
+class RbacProbeClass(str, Enum):
+    """Wie ein Cross-Tenant-Zugriff versucht wird -- also *was* eine RBAC-Probe
+    jeweils beweist."""
+
+    IDOR_REPLAY = "idor_replay"    # B ruft eine unter A entdeckte Ressourcen-ID ab
+    TENANT_ARG = "tenant_arg"      # B injiziert A's Tenant-/Owner-Wert in ein Argument
+
+
+@dataclass
+class RbacProbe:
+    """Ein einzelner Cross-Tenant-Versuch: Aufrufer B versucht, an eine
+    nachweislich A-eigene Ressource zu gelangen.
+
+    Strukturell kompatibel zu AuthProbe/UrlFetchProbe (besitzt `outcome` +
+    `to_dict()`), damit BoundaryResult alle Probe-Arten ohne Sonderfall aggregiert.
+    Ein NOT_ENFORCED-Verdikt entsteht nur bei nachgewiesenem A-Fingerprint in
+    B's Antwort (Prinzip V)."""
+
+    tool: str
+    parameter: str
+    probe_class: RbacProbeClass
+    outcome: BoundaryOutcome
+    observed: str  # kurze, secret-bereinigte Zusammenfassung (Prinzip V)
+    identity_from: str = ""  # Label der Ziel-Identität (A), deren Daten geleakt wurden
+    identity_to: str = ""    # Label der Aufrufer-Identität (B)
+
+    def to_dict(self) -> dict:
+        return {
+            "tool": self.tool,
+            "parameter": self.parameter,
+            "probe_class": self.probe_class.value,
+            "outcome": self.outcome.value,
+            "observed": self.observed,
+            "identity_from": self.identity_from,
+            "identity_to": self.identity_to,
+        }
+
+
 @runtime_checkable
 class DynamicProbe(Protocol):
     """Gemeinsames Minimal-Interface aller Tier-2-Proben (AuthProbe, UrlFetchProbe):

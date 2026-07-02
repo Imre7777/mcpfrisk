@@ -15,8 +15,8 @@ It runs **before** release — unlike tools such as `mcp-scan`, which inspect
 
 - **Static (Tier 1):** AST-based checks for command injection, path traversal,
   hardcoded secrets and tool poisoning — for Python *and* JS/TS.
-- **Dynamic (Tier 2):** probes a **running** server (auth boundary, SSRF) with
-  real proof instead of heuristics.
+- **Dynamic (Tier 2):** probes a **running** server (auth boundary, SSRF,
+  cross-tenant/RBAC leakage) with real proof instead of heuristics.
 - **Stdlib-only core:** the base install ships no external dependencies —
   small attack surface, trivial installation. JS/TS parsing is an optional extra.
 - **CI-ready:** one exit code, one optional JSON report — usable directly as a build gate.
@@ -121,6 +121,12 @@ mcpfrisk probe --server http://localhost:8000/mcp
 # stdio: McpFrisk starts the server as a subprocess and speaks newline-delimited JSON-RPC
 mcpfrisk probe --stdio "python -m my_server"
 mcpfrisk probe --stdio "npx -y @scope/mcp-server" --timeout 5 --fail-on high
+
+# Cross-tenant / RBAC: pass two caller identities (the first two are A/B).
+# Prefer env: indirection so credentials never land in argv / shell history.
+export TOKEN_A=... TOKEN_B=...
+mcpfrisk probe --server http://localhost:8000/mcp \
+  --identity "A=env:TOKEN_A" --identity "B=env:TOKEN_B"
 ```
 
 > ⚠️ **Security note:** `--stdio` **runs the given command** (code execution).
@@ -147,11 +153,22 @@ transport-level auth boundary) and reports *inconclusive* over stdio; the
   redirect bypass, and probes the cloud metadata endpoint `169.254.169.254`.
   A properly hardened server (denylist + post-DNS IP check) stays finding-free.
   Stdlib-only (CWE-918).
+- **RBAC_CROSS_TENANT** ✅ — acts as **two caller identities** (A/B) and proves
+  cross-tenant data leakage *by evidence*: it first collects A-private
+  fingerprints (content only A sees, not B in its own legitimate view), then
+  tries to reach A's data as B — via IDOR replay (fetching a resource id
+  discovered under A) and tenant-argument injection (feeding A's tenant/owner
+  value into a client-supplied argument). A finding is raised **only** when an
+  A-private marker surfaces in B's response. Read-only (never triggers a
+  mutating tool); anything ambiguous → *inconclusive*. Identities are supplied
+  via `--identity NAME=CREDENTIAL` (repeatable; `env:VAR` indirection
+  recommended). Over HTTP the credential becomes a header (default
+  `Authorization: Bearer <cred>`, overridable via `--auth-header`); over stdio
+  it becomes a per-identity env overlay (`--identity-env`, default
+  `MCP_AUTH_TOKEN`). Stdlib-only (CWE-639 / OWASP MCP07).
 
 **Planned** (architecture via `BaseDynamicCheck`/`DynamicRunner` already in place):
 
-- **RBAC_CROSS_TENANT** — simulates multiple roles, checks for namespace
-  leakage between tools (e.g. student/teacher separation).
 - **SCHEMA_FUZZING** — malformed/oversized parameters, checks for crashes
   or stacktrace leaks.
 - **ERROR_LEAKAGE** — inspects error responses for paths, stacktraces,
@@ -226,8 +243,8 @@ mcpfrisk/
 │   ├── models.py          # Finding, Severity, ScanResult + Tier-2 models
 │   ├── base_check.py      # BaseCheck (static) / BaseDynamicCheck (Tier 2)
 │   ├── runner.py          # Static orchestration
-│   ├── dynamic_runner.py  # Tier-2 orchestration + transport port (HTTP adapter)
-│   ├── stdio_transport.py # stdio adapter: subprocess + newline JSON-RPC
+│   ├── dynamic_runner.py  # Tier-2 orchestration + transport port (HTTP adapter, identities)
+│   ├── stdio_transport.py # stdio adapter: subprocess + newline JSON-RPC (per-identity channels)
 │   ├── sourcetree/        # SourceModel port + Python / tree-sitter adapters
 │   └── report.py          # Terminal output + JSON export
 ├── checks/

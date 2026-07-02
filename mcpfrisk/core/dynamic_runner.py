@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from mcpfrisk.core.models import (
@@ -30,6 +31,25 @@ from mcpfrisk.core.models import (
 _INVALID_TOKEN = "Bearer not-a-real-token"
 _HTTP_SCHEMES = ("http://", "https://")
 _STDIO_SCHEME = "stdio:"
+
+
+@dataclass
+class IdentityConfig:
+    """Aufrufer-Identitäten für identitäts-bewusste Checks (z.B. RBAC_CROSS_TENANT).
+
+    `identities` bildet Label -> Credential ab (Einfügereihenfolge zählt: die
+    ersten zwei sind A/B). `auth_header`/`identity_env` bestimmen, WIE die
+    Identität pro Transport angebunden wird (HTTP-Header bzw. stdio-Env-Overlay).
+    Ein leeres Config = keine Identitäten (identitäts-bewusste Checks
+    überspringen sich dann sauber als INCONCLUSIVE)."""
+
+    identities: dict[str, str] = field(default_factory=dict)
+    auth_header: str = "Authorization"
+    identity_env: str = "MCP_AUTH_TOKEN"
+
+    @property
+    def labels(self) -> list[str]:
+        return list(self.identities.keys())
 
 
 class DynamicTransportError(Exception):
@@ -59,7 +79,13 @@ class Transport(Protocol):
 
     def probe(self, operation: str, condition: CredentialCondition) -> AuthProbe: ...
 
-    def call(self, method: str, params: dict | None = None, timeout_s: float | None = None) -> dict: ...
+    def call(
+        self,
+        method: str,
+        params: dict | None = None,
+        timeout_s: float | None = None,
+        identity: str | None = None,
+    ) -> dict: ...
 
     def close(self) -> None: ...
 
@@ -67,11 +93,22 @@ class Transport(Protocol):
 class HttpTransport:
     """HTTP-Adapter (stdlib urllib). Verhält sich wie der bisherige DynamicSession-
     Code -- ein abgesicherter MCP-Server erzwingt Auth im Transport-Layer, bevor
-    JSON-RPC überhaupt verarbeitet wird, daher genügt ein urllib-Request."""
+    JSON-RPC überhaupt verarbeitet wird, daher genügt ein urllib-Request.
 
-    def __init__(self, target: str, timeout_s: float = 5.0) -> None:
+    Optional identitäts-bewusst: mit einer `IdentityConfig` bindet `call(...,
+    identity=<label>)` das passende Credential als Header an (Default
+    `Authorization: Bearer <cred>`, via `auth_header` überschreibbar). Ohne
+    `identity` bleibt das Verhalten exakt wie zuvor."""
+
+    def __init__(
+        self,
+        target: str,
+        timeout_s: float = 5.0,
+        identity_config: IdentityConfig | None = None,
+    ) -> None:
         self.target = target
         self.timeout_s = timeout_s
+        self._identity_config = identity_config or IdentityConfig()
 
     def probe(self, operation: str, condition: CredentialCondition) -> AuthProbe:
         """Sendet eine JSON-RPC-Anfrage und klassifiziert die Antwort.
@@ -112,11 +149,27 @@ class HttpTransport:
             f"HTTP {status} (unerwartet, keine klare Auth-Antwort)",
         )
 
+    def _apply_identity(self, headers: dict, identity: str | None) -> None:
+        """Bindet das Credential der Identität als Header an (kein-op ohne Identität
+        bzw. unbekanntes Label). Default `Authorization: Bearer <cred>`; bei einem
+        Custom-Header (`auth_header`) wird das Credential verbatim gesendet."""
+        if identity is None:
+            return
+        cred = self._identity_config.identities.get(identity)
+        if not cred:
+            return
+        header = self._identity_config.auth_header
+        if header.lower() == "authorization":
+            headers["Authorization"] = f"Bearer {cred}"
+        else:
+            headers[header] = cred
+
     def call(
         self,
         method: str,
         params: dict | None = None,
         timeout_s: float | None = None,
+        identity: str | None = None,
     ) -> dict:
         """Generischer JSON-RPC-Aufruf über HTTP (z.B. tools/list, tools/call).
         Liefert das geparste `result`-Objekt; wirft bei Transportfehlern eine
@@ -129,6 +182,7 @@ class HttpTransport:
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
         }
+        self._apply_identity(headers, identity)
         request = urllib.request.Request(  # noqa: S310 - scheme validated by factory
             self.target, data=body, headers=headers, method="POST"
         )
@@ -170,12 +224,16 @@ class HttpTransport:
         return None
 
 
-def make_transport(target: str, timeout_s: float = 5.0) -> Transport:
+def make_transport(
+    target: str,
+    timeout_s: float = 5.0,
+    identity_config: IdentityConfig | None = None,
+) -> Transport:
     """Wählt den Transport anhand des Ziels: http(s):// -> HTTP, sonst stdio
     (das Ziel ist dann das Server-Startkommando, optional mit `stdio:`-Präfix)."""
     low = target.lower()
     if low.startswith(_HTTP_SCHEMES):
-        return HttpTransport(target, timeout_s)
+        return HttpTransport(target, timeout_s, identity_config=identity_config)
     command = target
     if low.startswith(_STDIO_SCHEME):
         command = target[len(_STDIO_SCHEME):]
@@ -183,7 +241,7 @@ def make_transport(target: str, timeout_s: float = 5.0) -> Transport:
             command = command[2:]
     from mcpfrisk.core.stdio_transport import StdioTransport
 
-    return StdioTransport(command, timeout_s)
+    return StdioTransport(command, timeout_s, identity_config=identity_config)
 
 
 class DynamicSession:
@@ -194,14 +252,25 @@ class DynamicSession:
         target: str,
         timeout_s: float = 5.0,
         transport: Transport | None = None,
+        identity_config: IdentityConfig | None = None,
     ) -> None:
         self.target = target
         self.timeout_s = timeout_s
-        self._transport = transport if transport is not None else make_transport(target, timeout_s)
+        self.identity_config = identity_config or IdentityConfig()
+        self._transport = (
+            transport if transport is not None
+            else make_transport(target, timeout_s, self.identity_config)
+        )
 
     @property
     def is_http(self) -> bool:
         return isinstance(self._transport, HttpTransport)
+
+    @property
+    def identity_labels(self) -> list[str]:
+        """Labels der übergebenen Aufrufer-Identitäten (Reihenfolge = A, B, …).
+        Leer, wenn keine Identitäten konfiguriert sind."""
+        return self.identity_config.labels
 
     def probe(self, operation: str, condition: CredentialCondition) -> AuthProbe:
         return self._transport.probe(operation, condition)
@@ -211,25 +280,34 @@ class DynamicSession:
         method: str,
         params: dict | None = None,
         timeout_s: float | None = None,
+        identity: str | None = None,
     ) -> dict:
-        return self._transport.call(method, params, timeout_s)
+        return self._transport.call(method, params, timeout_s, identity)
 
     def close(self) -> None:
         self._transport.close()
 
 
 class DynamicRunner:
-    def __init__(self, checks=None, timeout_s: float = 5.0) -> None:
+    def __init__(
+        self,
+        checks=None,
+        timeout_s: float = 5.0,
+        identity_config: IdentityConfig | None = None,
+    ) -> None:
         if checks is None:
             from mcpfrisk.checks.registry import get_all_dynamic_checks
 
             checks = get_all_dynamic_checks()
         self.checks = checks
         self.timeout_s = timeout_s
+        self.identity_config = identity_config or IdentityConfig()
 
     def run(self, target: str, skip_checks: set[str] | None = None) -> DynamicScanResult:
         skip_checks = skip_checks or set()
-        session = DynamicSession(target=target, timeout_s=self.timeout_s)
+        session = DynamicSession(
+            target=target, timeout_s=self.timeout_s, identity_config=self.identity_config
+        )
         result = DynamicScanResult(target=target)
 
         try:

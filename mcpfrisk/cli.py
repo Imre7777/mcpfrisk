@@ -9,10 +9,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
-from mcpfrisk.core.dynamic_runner import DynamicRunner
+from mcpfrisk.core.dynamic_runner import DynamicRunner, IdentityConfig
 from mcpfrisk.core.fs import iter_source_files
 from mcpfrisk.core.models import Severity
 from mcpfrisk.core.report import (
@@ -82,6 +83,23 @@ def build_parser() -> argparse.ArgumentParser:
     probe_parser.add_argument(
         "--skip", type=str, nargs="*", default=[],
         help="Check-IDs, die übersprungen werden sollen, z.B. --skip AUTH_BOUNDARY",
+    )
+    probe_parser.add_argument(
+        "--identity", action="append", default=[], metavar="NAME=CRED",
+        help="Aufrufer-Identität für RBAC_CROSS_TENANT, wiederholbar (die ersten "
+             "zwei sind A/B). CRED darf 'env:VARNAME' sein -- empfohlen, damit "
+             "Secrets nicht in argv/Shell-History landen. Beispiel: "
+             "--identity \"A=env:TOKEN_A\" --identity \"B=env:TOKEN_B\".",
+    )
+    probe_parser.add_argument(
+        "--auth-header", type=str, default="Authorization", metavar="NAME",
+        help="HTTP-Header, über den die Identität angebunden wird (Default: "
+             "Authorization -> 'Bearer <cred>'; bei Custom-Header wird <cred> verbatim gesendet).",
+    )
+    probe_parser.add_argument(
+        "--identity-env", type=str, default="MCP_AUTH_TOKEN", metavar="VAR",
+        help="stdio: Name der Env-Variable, die je Identitäts-Prozess auf das "
+             "Credential gesetzt wird (Default: MCP_AUTH_TOKEN).",
     )
 
     return parser
@@ -158,12 +176,47 @@ def _warn_if_jsts_missing(target_path: Path) -> None:
         )
 
 
+def _parse_identities(specs: list[str]) -> IdentityConfig | None:
+    """Baut die IdentityConfig aus --identity NAME=CRED (mit env:-Indirektion).
+    Gibt None zurück, wenn eine Angabe ungültig ist (Aufrufer bricht dann ab)."""
+    identities: dict[str, str] = {}
+    for spec in specs:
+        if "=" not in spec:
+            print(f"Fehler: --identity erwartet NAME=CRED, bekam '{spec}'.", file=sys.stderr)
+            return None
+        name, cred = spec.split("=", 1)
+        name = name.strip()
+        if not name:
+            print(f"Fehler: leerer Identitäts-Name in '{spec}'.", file=sys.stderr)
+            return None
+        if cred.startswith("env:"):
+            var = cred[len("env:"):]
+            resolved = os.environ.get(var)
+            if not resolved:
+                print(
+                    f"Fehler: Umgebungsvariable '{var}' für Identität '{name}' "
+                    "ist nicht gesetzt/leer.",
+                    file=sys.stderr,
+                )
+                return None
+            cred = resolved
+        identities[name] = cred
+    return IdentityConfig(identities=identities)
+
+
 def _run_probe(args: argparse.Namespace) -> int:
     # Genau eines von --server/--stdio ist gesetzt (mutually exclusive, required).
     # Ein nacktes Kommando ohne http(s):// wird vom Transport-Factory als stdio
     # erkannt; ein 'stdio:'-Präfix macht die Absicht im Report explizit.
     target = args.server if args.server is not None else f"stdio:{args.stdio}"
-    runner = DynamicRunner(timeout_s=args.timeout)
+
+    identity_config = _parse_identities(args.identity)
+    if identity_config is None:
+        return 2
+    identity_config.auth_header = args.auth_header
+    identity_config.identity_env = args.identity_env
+
+    runner = DynamicRunner(timeout_s=args.timeout, identity_config=identity_config)
     result = runner.run(target, skip_checks=set(args.skip))
     print_dynamic_report(result)
 

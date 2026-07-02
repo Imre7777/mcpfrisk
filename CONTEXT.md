@@ -93,7 +93,8 @@ mcpfrisk/
 │   ├── tool_poisoning.py
 │   ├── auth_boundary.py    # Tier 2: AUTH_BOUNDARY
 │   ├── ssrf_check.py        # Tier 2: SSRF_CHECK (out-of-band Callback)
-│   └── _ssrf_callback.py    # Loopback-Callback-Listener für SSRF_CHECK
+│   ├── _ssrf_callback.py    # Loopback-Callback-Listener für SSRF_CHECK
+│   └── rbac_cross_tenant.py # Tier 2: RBAC_CROSS_TENANT (A/B-Identitäten, Fingerprint-Beleg)
 └── cli.py                 # argparse Entry Point (scan + probe), ruft runner/dynamic_runner + report
 ```
 
@@ -260,12 +261,22 @@ Priorisiert nach Recherche-Relevanz:
    `169.254.169.254` an, CWE-918). Ein eingehender Callback-Treffer ist der
    Beweis (keine Heuristik); ein abgesicherter Server (Denylist + Post-DNS-
    IP-Prüfung) bleibt befundfrei. Spec: `003-ssrf-check`.
-2. **`RBAC_CROSS_TENANT`** — simuliert mehrere Rollen/Nutzer-Kontexte,
-   prüft auf Namespace-Leckage zwischen Tools (z.B. liefert Tool A für
-   Rolle "Student" Daten, die nur Rolle "Teacher" sehen sollte). Das
-   ist die Schwachstellenklasse, die der/die Projektersteller(in) aus
-   einem früheren eigenen Projekt (LeoWiki) aus erster Hand kennt —
-   hoher persönlicher Erfahrungswert hier.
+2. **`RBAC_CROSS_TENANT`** ✅ **ERLEDIGT** (Spec `006-rbac-cross-tenant`) —
+   agiert als **zwei Aufrufer-Identitäten** (A/B) und beweist tenant-/rollen-
+   übergreifende Datenleckage *durch Beleg*: erst A-private Fingerprints sammeln
+   (Inhalt, den A sieht, B in seiner Eigen-Sicht aber nicht — via A−B-Baseline),
+   dann als B an A's Daten gelangen — per **IDOR-Replay** (US1: eine unter A
+   entdeckte Ressourcen-ID abrufen) und **Tenant-Argument-Injection** (US2: A's
+   Tenant-/Owner-Wert in ein client-geliefertes Argument schieben). Finding NUR
+   bei nachgewiesenem A-privatem Marker in B's Antwort; alles Mehrdeutige/Fehler
+   → INCONCLUSIVE. **Read-only** (mutierende Tool-Namen werden nie geprobt,
+   `_MUTATE_HINTS`). Identitäten via `--identity NAME=CREDENTIAL` (wiederholbar,
+   `env:VAR`-Indirektion); HTTP → Header (Default `Authorization: Bearer`,
+   `--auth-header`), stdio → Env-Overlay je Prozess (`--identity-env`, Default
+   `MCP_AUTH_TOKEN`). CWE-639 / OWASP MCP07. Additive Transport-Erweiterung
+   `call(..., identity=)` (`identity=None` = altes Verhalten). Diese
+   Schwachstellenklasse kennt der/die Projektersteller(in) aus einem früheren
+   eigenen Projekt (LeoWiki) aus erster Hand.
 3. **`SCHEMA_FUZZING`** — malformed/oversized/typenfehlerhafte Parameter
    senden, prüfen auf Crashes oder Stacktrace-Leaks in Fehlerantworten.
 5. **`ERROR_LEAKAGE`** — Fehlerantworten auf Pfade, Stacktraces,
@@ -495,13 +506,13 @@ driften:
   komplett offen unter Apache 2.0. Falls später ein Hosted-Dashboard
   oder Premium-Checks dazukommen sollen, müsste das Lizenzmodell neu
   überdacht werden (z.B. Open-Core-Modell). Nicht eilig, aber im Hinterkopf.
-- **Wie genau `RBAC_CROSS_TENANT` (Tier 2) konkret getestet wird,**
-  ist noch nicht im Detail durchdacht — das braucht vermutlich eine Art
-  Konfigurationsdatei, in der der Nutzer angibt, welche Rollen/Identitäten
-  existieren und welches Tool welcher Rolle zugänglich sein sollte
-  (sonst kann das Tool nicht automatisch "falsch" von "richtig"
-  unterscheiden). Das ist der komplexeste geplante Check und braucht
-  wahrscheinlich die meiste Designarbeit.
+- ~~**Wie genau `RBAC_CROSS_TENANT` konkret getestet wird**~~ **GEKLÄRT &
+  IMPLEMENTIERT** (Spec `006-rbac-cross-tenant`): statt einer Rollen-/Tool-
+  Erlaubnismatrix (die der Nutzer pflegen müsste) arbeitet der Check
+  **differenziell + belegbasiert** — der Nutzer übergibt nur zwei Credentials
+  (`--identity A=… B=…`), McpFrisk leitet "falsch vs. richtig" selbst ab: ein
+  A-privater Fingerprint, der in B's Antwort auftaucht, ist der Beweis. Kein
+  Erlaubnis-Config nötig; alles Mehrdeutige → INCONCLUSIVE.
 - **Ob ein LLM-Judge für Tool-Poisoning-Erkennung integriert wird** —
   aktuell rein pattern-basiert (siehe Tier-2-Punkt oben). Abwägung
   zwischen Erkennungsqualität und "zero dependency"-Anspruch des Tools.

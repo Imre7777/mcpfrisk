@@ -86,9 +86,8 @@ class TestStdioInconclusive:
         result, finding = _run_ssrf(session)
         assert result.outcome == BoundaryOutcome.INCONCLUSIVE
         assert finding is None
-        # Lifecycle: nach close() läuft kein Subprozess mehr.
-        proc = transport._handle._proc
-        assert proc is None or proc.poll() is not None
+        # Lifecycle: nach close() läuft kein Subprozess mehr (Kanäle geleert).
+        assert transport._channels == {}
 
 
 # ---------------------------------------------------------------------------
@@ -99,8 +98,9 @@ class TestAuthBoundaryOverStdio:
         transport = StdioTransport([sys.executable, str(_FIXTURE)], 2.0)
         probe = transport.probe("tools/list", CredentialCondition.NONE)
         assert probe.outcome == BoundaryOutcome.INCONCLUSIVE
-        # probe() darf den Server nicht starten (Auth-Boundary ist HTTP-Sache).
-        assert transport._handle._proc is None
+        # probe() darf den Server nicht starten (Auth-Boundary ist HTTP-Sache) --
+        # es wird kein Kanal/Subprozess angelegt.
+        assert transport._channels == {}
         transport.close()
 
     def test_runner_stdio_target_auth_boundary_inconclusive(self):
