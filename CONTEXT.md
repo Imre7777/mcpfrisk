@@ -293,8 +293,23 @@ Priorisiert nach Recherche-Relevanz:
    Scope von `CMD_INJECTION`/`SSRF_CHECK`, nicht dieses Checks. Rein
    `call()`-basiert -- **keine** Transport-/Core-Änderung nötig (läuft sofort
    über HTTP UND stdio). CWE-20/248/400/209, OWASP MCP05. Stdlib-only.
-5. **`ERROR_LEAKAGE`** — Fehlerantworten auf Pfade, Stacktraces,
-   DB-Schema-Informationen prüfen.
+5. **`ERROR_LEAKAGE`** ✅ **ERLEDIGT** (Spec `008-error-leakage`) — sendet drei
+   "natürliche", schema-**konforme** Fehlerauslöser (keine adversarialen
+   Payloads) an einen laufenden Server und prüft die Antworten auf
+   Interna-Leaks: unbekannter Tool-Name, unbekannte JSON-RPC-Methode, und
+   (sofern ein lesendes Tool einen ID-artigen Pflichtparameter hat) eine
+   schema-valide, aber nicht-existente Ressourcen-ID. Finding NUR bei
+   konkretem Traceback-/Exception-Klassen-/Pfad-/SQL-Marker in der Antwort
+   (MEDIUM, CWE-209); eine generische, strukturierte Ablehnung bleibt
+   befundfrei. Bewusste Abgrenzung zu `SCHEMA_FUZZING`: jener probt
+   schema-**verletzende** Payloads mit Crash-Fokus (Leak nur Nebensignal);
+   dieser Check probt nur schema-valide Alltags-Eingaben und hat **keinen**
+   eigenen Crash-Nachweis (bleibt SCHEMA_FUZZINGs Verantwortung, Prinzip II —
+   keine Redundanz zwischen Checks). OWASP-MCP-Top-10 kennt keine dedizierte
+   Kategorie für Error-Info-Disclosure (Stand 2026-07-02 geprüft) —
+   `owasp_mcp_ref="MCP08"` ist bewusst nur ein Best-Effort-Näherungswert,
+   CWE-209 die eigentlich präzise Referenz. Read-only, rein `call()`-basiert,
+   stdlib-only.
 6. **`RATE_LIMITING`** — parallele Last erzeugen, auf fehlende
    Constraints prüfen.
 

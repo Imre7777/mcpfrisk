@@ -232,6 +232,42 @@ class FuzzProbe:
         }
 
 
+class ErrorProbeClass(str, Enum):
+    """Welcher 'natürliche' (schema-KONFORME, adversarial-freie) Fehlerauslöser
+    gesendet wurde -- also *was* eine ERROR_LEAKAGE-Probe jeweils beweist.
+    Bewusst OHNE Crash- oder schema-verletzende Klassen (die gehören
+    SCHEMA_FUZZING) und ohne Injection-Klassen (CMD_INJECTION/SSRF_CHECK)."""
+
+    UNKNOWN_TOOL = "unknown_tool"              # tools/call mit nicht-existentem Namen
+    UNKNOWN_METHOD = "unknown_method"          # unbekannte Top-Level-JSON-RPC-Methode
+    NONEXISTENT_RESOURCE = "nonexistent_resource"  # schema-valide, aber nicht-existente ID
+
+
+@dataclass
+class ErrorProbe:
+    """Ein einzelner 'natürlicher' Fehler-Versuch gegen ein Tool/eine Methode.
+
+    Strukturell kompatibel zu FuzzProbe/RbacProbe/UrlFetchProbe (besitzt
+    `outcome` + `to_dict()`), damit BoundaryResult alle Probe-Arten ohne
+    Sonderfall aggregiert. Anders als FuzzProbe gibt es hier nur EIN Signal
+    (Interna-Leak) -- kein Crash-Nachweis (bleibt SCHEMA_FUZZING-Scope)."""
+
+    tool: str
+    parameter: str
+    probe_class: ErrorProbeClass
+    outcome: BoundaryOutcome
+    observed: str  # kurze, secret-bereinigte Zusammenfassung (Prinzip V)
+
+    def to_dict(self) -> dict:
+        return {
+            "tool": self.tool,
+            "parameter": self.parameter,
+            "probe_class": self.probe_class.value,
+            "outcome": self.outcome.value,
+            "observed": self.observed,
+        }
+
+
 @runtime_checkable
 class DynamicProbe(Protocol):
     """Gemeinsames Minimal-Interface aller Tier-2-Proben (AuthProbe, UrlFetchProbe):

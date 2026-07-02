@@ -4,8 +4,8 @@
 
 **Created**: 2026-07-02
 
-**Status**: Design entschieden — NICHT IMPLEMENTIERT. Bereit für Phase 1
-(Modelle + rote Tests) auf Signal.
+**Status**: IMPLEMENTIERT (2026-07-02). `mcpfrisk/checks/error_leakage.py`,
+registriert in `DYNAMIC_CHECKS`. Volle Suite grün (111/111), keine Regression.
 
 **Input**: Nächster Tier-2-Check laut Roadmap-Priorität nach `SCHEMA_FUZZING`
 (007, implementiert). Baut wie 007 direkt auf dem `call()`-basierten

@@ -13,6 +13,16 @@ Achsen (Prinzip VI -- paired fixtures, beide Protokoll-Ären):
   --mode vulnerable : ein typ-fremder/übergroßer `id`-Wert löst eine ungefangene
                        Exception aus -> der Prozess stirbt (Crash-Beleg, FR-003).
   --mode clean       : validiert `id`, antwortet strukturiert mit -32602, lebt weiter.
+- --toolset errors: ERROR_LEAKAGE-Fixture -- dasselbe `get_item(id: string)`-Tool
+  plus zwei "natürliche" (schema-konforme) Fehlerauslöser: unbekannter Tool-Name
+  und unbekannte Top-Level-Methode. Anders als --toolset fuzz stirbt hier NIE
+  der Prozess -- alle drei Trigger antworten normal (nur der Inhalt der
+  Fehlerantwort unterscheidet sich).
+  --mode vulnerable : alle drei Trigger (unbekannter Tool-Name, unbekannte
+                       Methode, nicht-existente `id`) leaken einen rohen
+                       Traceback im Result statt strukturiert abzulehnen.
+  --mode clean       : alle drei Trigger antworten generisch/strukturiert
+                       (-32602/-32601 bzw. {"item": null}), kein Interna-Leak.
 - --mode vulnerable (toolset fetch) : tools/call holt JEDE URL (Callback-Listener wird getroffen).
 - --mode clean      (toolset fetch) : tools/call lehnt Loopback/RFC1918/Link-Local/Nicht-HTTP ab.
 - --mode silent     : antwortet nie (für den Timeout-/Lifecycle-Test).
@@ -26,6 +36,7 @@ import ipaddress
 import json
 import socket
 import sys
+import traceback
 import urllib.error
 import urllib.request
 from urllib.parse import urlparse
@@ -75,6 +86,40 @@ def _fuzz_get_item(rid: object, args: dict, mode: str) -> None:
         _error(rid, -32602, "Invalid params: id must be a non-empty string")
         return
     _result(rid, {"item": _ITEMS.get(item_id)})
+
+
+def _leak_result(rid: object, marker: Exception) -> None:
+    try:
+        raise marker
+    except type(marker):
+        tb = traceback.format_exc()
+    _result(rid, {"isError": True, "content": [{"type": "text", "text": tb}]})
+
+
+def _errors_get_item(rid: object, args: dict, mode: str) -> None:
+    item_id = args.get("id")
+    item = _ITEMS.get(item_id) if isinstance(item_id, str) else None
+    if item is not None:
+        _result(rid, {"item": item})
+        return
+    if mode == "vulnerable":
+        _leak_result(rid, RuntimeError(f"sqlite3.OperationalError: no such row: items.id={item_id!r}"))
+        return
+    _result(rid, {"item": None})
+
+
+def _errors_unknown_tool(rid: object, name: object, mode: str) -> None:
+    if mode == "vulnerable":
+        _leak_result(rid, KeyError(f"No such tool registered: {name!r}"))
+        return
+    _error(rid, -32602, f"Unknown tool: {name}")
+
+
+def _errors_unknown_method(rid: object, method: object, mode: str) -> None:
+    if mode == "vulnerable":
+        _leak_result(rid, AttributeError(f"'Dispatcher' object has no attribute {method!r}"))
+        return
+    _error(rid, -32601, "Method not found")
 
 
 def _is_blocked_target(url: str) -> bool:
@@ -152,6 +197,22 @@ def _handle(method: str, rid: object, req: dict, era: str, mode: str, toolset: s
             "serverInfo": _SERVER_INFO,
         })
         return
+    if toolset == "errors":
+        if method == "tools/list":
+            _result(rid, {"tools": [_GET_ITEM_TOOL]})
+            return
+        if method == "tools/call":
+            params = req.get("params") or {}
+            name = params.get("name")
+            args = params.get("arguments") or {}
+            if name == "get_item":
+                _errors_get_item(rid, args, mode)
+            else:
+                _errors_unknown_tool(rid, name, mode)
+            return
+        # jede andere Top-Level-Methode -- der US2 "unbekannte Methode"-Trigger.
+        _errors_unknown_method(rid, method, mode)
+        return
     if method == "tools/list":
         _result(rid, {"tools": [_GET_ITEM_TOOL] if toolset == "fuzz" else [_FETCH_TOOL]})
         return
@@ -174,7 +235,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--era", choices=["legacy", "modern"], default="legacy")
     parser.add_argument("--mode", choices=["vulnerable", "clean", "silent"], default="vulnerable")
-    parser.add_argument("--toolset", choices=["fetch", "fuzz"], default="fetch")
+    parser.add_argument("--toolset", choices=["fetch", "fuzz", "errors"], default="fetch")
     parser.add_argument("--banner", action="store_true")
     args = parser.parse_args()
 

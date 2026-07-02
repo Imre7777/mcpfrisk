@@ -182,10 +182,21 @@ transport-level auth boundary) and reports *inconclusive* over stdio; the
   `CMD_INJECTION`/`SSRF_CHECK`). CWE-20/248/400/209, OWASP MCP05.
   Stdlib-only. Spec: `007-schema-fuzzing`.
 
+- **ERROR_LEAKAGE** ✅ — sends three "natural", schema-**conformant** error
+  triggers (no adversarial payloads) at a running server and inspects the
+  responses for leaked internals: an unknown tool name, an unknown top-level
+  JSON-RPC method, and (if a reading tool has an id-like required parameter)
+  a well-formed but nonexistent resource id. A finding requires a concrete
+  leaked traceback/exception-class/absolute-path/SQL-error marker in the
+  response (MEDIUM, CWE-209); a generic, structured rejection is finding-free.
+  Complements `SCHEMA_FUZZING`: that check probes schema-**violating**
+  payloads for crash evidence (leak only a side signal); this check probes
+  only schema-valid, everyday inputs and owns no crash proof of its own — to
+  avoid overlapping responsibility between the two checks. Read-only;
+  stdlib-only. Spec: `008-error-leakage`.
+
 **Planned** (architecture via `BaseDynamicCheck`/`DynamicRunner` already in place):
 
-- **ERROR_LEAKAGE** — inspects error responses for paths, stacktraces,
-  DB schema information.
 - **RATE_LIMITING** — generates parallel load, checks for missing constraints.
 
 ## Roadmap: Tier 3 (supply chain & spec compliance)
