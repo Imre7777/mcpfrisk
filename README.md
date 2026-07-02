@@ -167,10 +167,23 @@ transport-level auth boundary) and reports *inconclusive* over stdio; the
   it becomes a per-identity env overlay (`--identity-env`, default
   `MCP_AUTH_TOKEN`). Stdlib-only (CWE-639 / OWASP MCP07).
 
+- **SCHEMA_FUZZING** ✅ — reads a running server's declared tool schemas
+  (`tools/list`), derives fuzz payloads per parameter (type mismatch,
+  oversized, missing required, format-violating) and sends them to **reading**
+  tools only. A finding requires hard evidence: either the server **crashes**
+  (a post-payload liveness recheck against `tools/list` fails — proven
+  process/connection death, not a guess) or its error response **leaks a
+  stacktrace/internal detail** (Traceback/exception-class/absolute-path/SQL
+  markers). A structured validation rejection that keeps the server alive is
+  finding-free; a timeout/hang where the liveness recheck still succeeds is
+  *inconclusive* + a triage note (never its own finding — a hang isn't a
+  proven crash). Stops at the first proof (fail-fast, no orphaned stdio
+  processes). Read-only; injection-style payloads are out of scope (that's
+  `CMD_INJECTION`/`SSRF_CHECK`). CWE-20/248/400/209, OWASP MCP05.
+  Stdlib-only. Spec: `007-schema-fuzzing`.
+
 **Planned** (architecture via `BaseDynamicCheck`/`DynamicRunner` already in place):
 
-- **SCHEMA_FUZZING** — malformed/oversized parameters, checks for crashes
-  or stacktrace leaks.
 - **ERROR_LEAKAGE** — inspects error responses for paths, stacktraces,
   DB schema information.
 - **RATE_LIMITING** — generates parallel load, checks for missing constraints.

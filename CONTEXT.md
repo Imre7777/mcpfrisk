@@ -277,8 +277,22 @@ Priorisiert nach Recherche-Relevanz:
    `call(..., identity=)` (`identity=None` = altes Verhalten). Diese
    Schwachstellenklasse kennt der/die Projektersteller(in) aus einem früheren
    eigenen Projekt (LeoWiki) aus erster Hand.
-3. **`SCHEMA_FUZZING`** — malformed/oversized/typenfehlerhafte Parameter
-   senden, prüfen auf Crashes oder Stacktrace-Leaks in Fehlerantworten.
+3. **`SCHEMA_FUZZING`** ✅ **ERLEDIGT** (Spec `007-schema-fuzzing`) — liest die
+   deklarierten Tool-Schemata (`tools/list`) eines laufenden Servers, leitet
+   pro Parameter Fuzz-Payloads ab (Typ-Mismatch, Übergröße, fehlendes
+   Pflichtfeld, formatverletzend) und sendet sie ausschließlich an **lesende**
+   Tools. Finding NUR bei hartem Beleg: **Crash** (Liveness-Recheck via
+   `tools/list` nach dem Payload schlägt fehl -> bewiesener Prozess-/
+   Verbindungstod, Severity HIGH) oder **Interna-Leak** (Traceback-/Exception-/
+   Pfad-/SQL-Marker in der Fehlerantwort, Severity MEDIUM, CWE-209). Ein
+   Timeout/Hang, bei dem der Liveness-Recheck weiterhin erfolgreich ist, ist
+   **kein** Crash -> INCONCLUSIVE + Triage-Hinweis, nie ein eigenständiges
+   Finding. Ein strukturierter Validierungsfehler ohne Leak, Server lebt ->
+   ENFORCED (kein Finding). Stoppt beim ersten Beleg (Fail-Fast, keine
+   verwaisten stdio-Prozesse). Read-only; Injection-Payloads sind bewusst
+   Scope von `CMD_INJECTION`/`SSRF_CHECK`, nicht dieses Checks. Rein
+   `call()`-basiert -- **keine** Transport-/Core-Änderung nötig (läuft sofort
+   über HTTP UND stdio). CWE-20/248/400/209, OWASP MCP05. Stdlib-only.
 5. **`ERROR_LEAKAGE`** — Fehlerantworten auf Pfade, Stacktraces,
    DB-Schema-Informationen prüfen.
 6. **`RATE_LIMITING`** — parallele Last erzeugen, auf fehlende

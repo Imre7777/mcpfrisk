@@ -196,6 +196,42 @@ class RbacProbe:
         }
 
 
+class FuzzProbeClass(str, Enum):
+    """Welche Art schema-abgeleiteter Payload gesendet wurde -- also *was*
+    eine Fuzz-Probe jeweils beweist. Bewusst OHNE Injection-Klassen (die
+    gehoeren CMD_INJECTION/SSRF_CHECK, nicht SCHEMA_FUZZING)."""
+
+    TYPE_MISMATCH = "type_mismatch"        # z.B. Zahl/Objekt/Array/null statt String
+    OVERSIZED = "oversized"                # sehr langer String / tief geschachteltes Objekt
+    MISSING_REQUIRED = "missing_required"  # Pflichtfeld weggelassen
+    MALFORMED_FORMAT = "malformed_format"  # formatverletzend, z.B. Nicht-URL fuer format: uri
+
+
+@dataclass
+class FuzzProbe:
+    """Ein einzelner Fuzz-Versuch gegen ein Tool/einen Parameter.
+
+    Strukturell kompatibel zu AuthProbe/UrlFetchProbe/RbacProbe (besitzt
+    `outcome` + `to_dict()`), damit BoundaryResult alle Probe-Arten ohne
+    Sonderfall aggregiert. NOT_ENFORCED entsteht nur bei belegtem Crash
+    (Liveness-Recheck) oder konkretem Interna-Leak (Prinzip V)."""
+
+    tool: str
+    parameter: str
+    probe_class: FuzzProbeClass
+    outcome: BoundaryOutcome
+    observed: str  # kurze, secret-bereinigte Zusammenfassung (Prinzip V)
+
+    def to_dict(self) -> dict:
+        return {
+            "tool": self.tool,
+            "parameter": self.parameter,
+            "probe_class": self.probe_class.value,
+            "outcome": self.outcome.value,
+            "observed": self.observed,
+        }
+
+
 @runtime_checkable
 class DynamicProbe(Protocol):
     """Gemeinsames Minimal-Interface aller Tier-2-Proben (AuthProbe, UrlFetchProbe):

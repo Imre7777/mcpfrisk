@@ -4,10 +4,11 @@
 
 **Created**: 2026-07-02
 
-**Status**: Design entschieden — NICHT IMPLEMENTIERT. Beide Design-Punkte nach
-Best Practice festgelegt (v1 rein verhaltensbasiert, kein Schema-Deklarations-
-Advisory; Crash-Erkennung via Liveness-Recheck ohne Transport-Umbau). Bereit für
-Phase 1 (Modelle + rote Tests) auf Signal.
+**Status**: IMPLEMENTIERT (2026-07-02). `mcpfrisk/checks/schema_fuzzing.py`,
+registriert in `DYNAMIC_CHECKS`. Volle Suite grün (102/102), keine Regression.
+Beide Design-Punkte wie festgelegt umgesetzt (v1 rein verhaltensbasiert, kein
+Schema-Deklarations-Advisory; Crash-Erkennung via Liveness-Recheck ohne
+Transport-/Core-Umbau).
 
 **Input**: Nächster Tier-2-Check laut Roadmap-Priorität nach `RBAC_CROSS_TENANT`.
 Baut direkt auf dem `call()`-basierten Transport-Port (HTTP **und** stdio,

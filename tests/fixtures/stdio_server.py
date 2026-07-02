@@ -8,8 +8,13 @@ Imports), damit er als reines Skript läuft.
 Achsen (Prinzip VI -- paired fixtures, beide Protokoll-Ären):
 - --era legacy : server/discover -> Fehler (-32601); verlangt initialize-Handshake.
 - --era modern : server/discover -> result; stateless, kein Handshake.
-- --mode vulnerable : tools/call holt JEDE URL (callback-Listener wird getroffen).
-- --mode clean      : tools/call lehnt Loopback/RFC1918/Link-Local/Nicht-HTTP ab.
+- --toolset fetch (default): SSRF-Fixture, siehe --mode unten.
+- --toolset fuzz: SCHEMA_FUZZING-Fixture -- ein `get_item(id: string)`-Tool.
+  --mode vulnerable : ein typ-fremder/übergroßer `id`-Wert löst eine ungefangene
+                       Exception aus -> der Prozess stirbt (Crash-Beleg, FR-003).
+  --mode clean       : validiert `id`, antwortet strukturiert mit -32602, lebt weiter.
+- --mode vulnerable (toolset fetch) : tools/call holt JEDE URL (Callback-Listener wird getroffen).
+- --mode clean      (toolset fetch) : tools/call lehnt Loopback/RFC1918/Link-Local/Nicht-HTTP ab.
 - --mode silent     : antwortet nie (für den Timeout-/Lifecycle-Test).
 - --banner          : schreibt vor dem Loop eine Nicht-JSON-Zeile auf stdout
                       (testet, dass der Client Log-/Bannerzeilen ignoriert).
@@ -39,6 +44,37 @@ _FETCH_TOOL = {
         "required": ["url"],
     },
 }
+
+_ITEMS = {"item-1": {"id": "item-1", "name": "Widget"}}
+
+_GET_ITEM_TOOL = {
+    "name": "get_item",
+    "description": "Get an item by its id.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {"id": {"type": "string"}},
+        "required": ["id"],
+    },
+}
+
+
+def _is_bad_id(item_id: object) -> bool:
+    return not isinstance(item_id, str) or len(item_id) > 1000
+
+
+def _fuzz_get_item(rid: object, args: dict, mode: str) -> None:
+    item_id = args.get("id")
+    if mode == "vulnerable":
+        if _is_bad_id(item_id):
+            # Ungefangen -- der Prozess stirbt (Crash-Beleg für den Liveness-Recheck).
+            raise TypeError(f"item id must be str, got {type(item_id).__name__}: {item_id!r}")
+        _result(rid, {"item": _ITEMS.get(item_id)})
+        return
+    # clean
+    if _is_bad_id(item_id):
+        _error(rid, -32602, "Invalid params: id must be a non-empty string")
+        return
+    _result(rid, {"item": _ITEMS.get(item_id)})
 
 
 def _is_blocked_target(url: str) -> bool:
@@ -97,7 +133,7 @@ def _error(rid: object, code: int, message: str) -> None:
     _send({"jsonrpc": "2.0", "id": rid, "error": {"code": code, "message": message}})
 
 
-def _handle(method: str, rid: object, req: dict, era: str, mode: str) -> None:
+def _handle(method: str, rid: object, req: dict, era: str, mode: str, toolset: str) -> None:
     if method == "server/discover":
         if era == "modern":
             _result(rid, {
@@ -117,10 +153,17 @@ def _handle(method: str, rid: object, req: dict, era: str, mode: str) -> None:
         })
         return
     if method == "tools/list":
-        _result(rid, {"tools": [_FETCH_TOOL]})
+        _result(rid, {"tools": [_GET_ITEM_TOOL] if toolset == "fuzz" else [_FETCH_TOOL]})
         return
     if method == "tools/call":
-        args = (req.get("params") or {}).get("arguments") or {}
+        params = req.get("params") or {}
+        args = params.get("arguments") or {}
+        if toolset == "fuzz":
+            if params.get("name") == "get_item":
+                _fuzz_get_item(rid, args, mode)
+            else:
+                _result(rid, {})
+            return
         observed = _perform_fetch(args.get("url", ""), mode)
         _result(rid, {"content": [{"type": "text", "text": observed}]})
         return
@@ -131,6 +174,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--era", choices=["legacy", "modern"], default="legacy")
     parser.add_argument("--mode", choices=["vulnerable", "clean", "silent"], default="vulnerable")
+    parser.add_argument("--toolset", choices=["fetch", "fuzz"], default="fetch")
     parser.add_argument("--banner", action="store_true")
     args = parser.parse_args()
 
@@ -154,7 +198,7 @@ def main() -> int:
             continue  # Notification -> keine Antwort
         if args.mode == "silent":
             continue  # nie antworten (Timeout-/Lifecycle-Test)
-        _handle(req.get("method", ""), rid, req, args.era, args.mode)
+        _handle(req.get("method", ""), rid, req, args.era, args.mode, args.toolset)
     return 0
 
 
