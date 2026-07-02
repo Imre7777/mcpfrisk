@@ -4,8 +4,8 @@
 
 **Created**: 2026-07-02
 
-**Status**: Design entschieden — NICHT IMPLEMENTIERT. Bereit für Phase 1
-(Modelle + rote Tests) auf Signal.
+**Status**: IMPLEMENTIERT (2026-07-02). `mcpfrisk/checks/rate_limiting.py`,
+registriert in `DYNAMIC_CHECKS`. Volle Suite grün (123/123), keine Regression.
 
 **Input**: Letzter Tier-2-Check der ursprünglichen Roadmap, nach
 `ERROR_LEAKAGE` (008, implementiert). Baut wie 007/008 direkt auf dem

@@ -23,6 +23,14 @@ Achsen (Prinzip VI -- paired fixtures, beide Protokoll-Ären):
                        Traceback im Result statt strukturiert abzulehnen.
   --mode clean       : alle drei Trigger antworten generisch/strukturiert
                        (-32602/-32601 bzw. {"item": null}), kein Interna-Leak.
+- --toolset burst: RATE_LIMITING-Fixture -- dasselbe `get_item(id: string)`-Tool.
+  Deterministisch: die ersten (_BURST_THRESHOLD - 1) Aufrufe sind immer normal,
+  ab da greift der Modus.
+  --mode throttled  : ab der Schwelle ein explizites Rate-Limit-Signal im Result.
+  --mode degrading  : ab der Schwelle eine feste, deterministische Verzögerung,
+                       nie eine Drosselung, nie ein Absturz.
+  --mode crash      : ab der Schwelle eine ungefangene Exception -> Prozess stirbt.
+  --mode fast       : immer schnell, nie Drosselung/Absturz (sauberer Fall).
 - --mode vulnerable (toolset fetch) : tools/call holt JEDE URL (Callback-Listener wird getroffen).
 - --mode clean      (toolset fetch) : tools/call lehnt Loopback/RFC1918/Link-Local/Nicht-HTTP ab.
 - --mode silent     : antwortet nie (für den Timeout-/Lifecycle-Test).
@@ -36,6 +44,7 @@ import ipaddress
 import json
 import socket
 import sys
+import time
 import traceback
 import urllib.error
 import urllib.request
@@ -120,6 +129,39 @@ def _errors_unknown_method(rid: object, method: object, mode: str) -> None:
         _leak_result(rid, AttributeError(f"'Dispatcher' object has no attribute {method!r}"))
         return
     _error(rid, -32601, "Method not found")
+
+
+_BURST_THRESHOLD = 5          # calls 1..THRESHOLD-1 are always normal
+_BURST_DEGRADE_DELAY_S = 0.4  # deterministic, well above any sane rate-limiting threshold
+_burst_call_count = 0         # module-level: fresh per subprocess, exactly what we want
+
+
+def _burst_get_item(rid: object, args: dict, mode: str) -> None:
+    global _burst_call_count
+    _burst_call_count += 1
+    call_index = _burst_call_count
+    item_id = args.get("id")
+    item = _ITEMS.get(item_id) if isinstance(item_id, str) else None
+    result = {"item": item}
+
+    if call_index < _BURST_THRESHOLD:
+        _result(rid, result)
+        return
+    if mode == "throttled":
+        _result(rid, {"isError": True, "content": [{
+            "type": "text",
+            "text": "429 Too Many Requests: rate limit exceeded, please retry after backoff",
+        }]})
+        return
+    if mode == "degrading":
+        time.sleep(_BURST_DEGRADE_DELAY_S)
+        _result(rid, result)
+        return
+    if mode == "crash":
+        # Ungefangen -- der Prozess stirbt (Crash-Beleg für den Liveness-Recheck).
+        raise RuntimeError("simulated: resource exhaustion crash under burst load")
+    # "fast" (und jeder unbekannte Modus): immer normal
+    _result(rid, result)
 
 
 def _is_blocked_target(url: str) -> bool:
@@ -213,6 +255,20 @@ def _handle(method: str, rid: object, req: dict, era: str, mode: str, toolset: s
         # jede andere Top-Level-Methode -- der US2 "unbekannte Methode"-Trigger.
         _errors_unknown_method(rid, method, mode)
         return
+    if toolset == "burst":
+        if method == "tools/list":
+            _result(rid, {"tools": [_GET_ITEM_TOOL]})
+            return
+        if method == "tools/call":
+            params = req.get("params") or {}
+            args = params.get("arguments") or {}
+            if params.get("name") == "get_item":
+                _burst_get_item(rid, args, mode)
+            else:
+                _result(rid, {})
+            return
+        _result(rid, {})
+        return
     if method == "tools/list":
         _result(rid, {"tools": [_GET_ITEM_TOOL] if toolset == "fuzz" else [_FETCH_TOOL]})
         return
@@ -234,8 +290,12 @@ def _handle(method: str, rid: object, req: dict, era: str, mode: str, toolset: s
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--era", choices=["legacy", "modern"], default="legacy")
-    parser.add_argument("--mode", choices=["vulnerable", "clean", "silent"], default="vulnerable")
-    parser.add_argument("--toolset", choices=["fetch", "fuzz", "errors"], default="fetch")
+    parser.add_argument(
+        "--mode",
+        choices=["vulnerable", "clean", "silent", "throttled", "degrading", "crash", "fast"],
+        default="vulnerable",
+    )
+    parser.add_argument("--toolset", choices=["fetch", "fuzz", "errors", "burst"], default="fetch")
     parser.add_argument("--banner", action="store_true")
     args = parser.parse_args()
 

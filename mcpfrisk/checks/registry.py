@@ -11,6 +11,7 @@ from mcpfrisk.checks.command_injection import CommandInjectionCheck
 from mcpfrisk.checks.hardcoded_secrets import HardcodedSecretsCheck
 from mcpfrisk.checks.path_traversal import PathTraversalCheck
 from mcpfrisk.checks.error_leakage import ErrorLeakageCheck
+from mcpfrisk.checks.rate_limiting import RateLimitingCheck
 from mcpfrisk.checks.rbac_cross_tenant import RbacCrossTenantCheck
 from mcpfrisk.checks.schema_fuzzing import SchemaFuzzingCheck
 from mcpfrisk.checks.ssrf_check import SsrfCheck
@@ -33,6 +34,7 @@ DYNAMIC_CHECKS: list[type[BaseDynamicCheck]] = [
     RbacCrossTenantCheck,
     SchemaFuzzingCheck,
     ErrorLeakageCheck,
+    RateLimitingCheck,
 ]
 
 

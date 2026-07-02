@@ -195,9 +195,23 @@ transport-level auth boundary) and reports *inconclusive* over stdio; the
   avoid overlapping responsibility between the two checks. Read-only;
   stdlib-only. Spec: `008-error-leakage`.
 
-**Planned** (architecture via `BaseDynamicCheck`/`DynamicRunner` already in place):
+- **RATE_LIMITING** ✅ — measures a baseline latency, then sends a short,
+  bounded, fast **sequential** burst (v1: no true multi-thread parallelism —
+  stdio's shared per-identity subprocess channel isn't thread-safe for real
+  concurrent calls, so this stays transport-blind with no transport change)
+  at a reading tool and evaluates only hard signals: an explicit throttle
+  hint (429 / recognizable "rate limit" text) anywhere in the burst passes
+  immediately; a post-burst liveness-recheck failure proves a crash (HIGH,
+  CWE-400); a measured latency degradation past a defined multiple of the
+  baseline with no throttle proves unbounded resource consumption (MEDIUM,
+  CWE-400/CWE-770). No finding carries an OWASP MCP Top 10 reference — none
+  of the ten official categories has any real bearing on resource
+  exhaustion/DoS. Read-only; stdlib-only. Spec: `009-rate-limiting`.
 
-- **RATE_LIMITING** — generates parallel load, checks for missing constraints.
+**Roadmap fully delivered** — all six originally planned Tier-2 checks
+(`AUTH_BOUNDARY`, `SSRF_CHECK`, `RBAC_CROSS_TENANT`, `SCHEMA_FUZZING`,
+`ERROR_LEAKAGE`, `RATE_LIMITING`) are implemented. See Tier 3 below for
+what's next.
 
 ## Roadmap: Tier 3 (supply chain & spec compliance)
 

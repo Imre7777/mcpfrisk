@@ -268,6 +268,41 @@ class ErrorProbe:
         }
 
 
+class RateLimitProbeClass(str, Enum):
+    """Welches harte Signal eine RATE_LIMITING-Probe jeweils beweist. Bewusst
+    OHNE eine eigene 'Throttle erkannt'-Klasse -- das ist der ENFORCED-Fall
+    (kein Finding), keine eigene Probe-Klasse nötig."""
+
+    BURST_CRASH = "burst_crash"              # Liveness-Recheck nach Burst schlägt fehl
+    BURST_DEGRADATION = "burst_degradation"  # gemessene Latenz-Degradation ohne Crash/Drossel
+
+
+@dataclass
+class RateLimitProbe:
+    """Ein einzelner Burst-Versuch gegen ein Tool.
+
+    Strukturell kompatibel zu ErrorProbe/FuzzProbe/RbacProbe/UrlFetchProbe
+    (besitzt `outcome` + `to_dict()`), damit BoundaryResult alle Probe-Arten
+    ohne Sonderfall aggregiert. NOT_ENFORCED entsteht nur bei bewiesenem
+    Crash (Liveness) oder konkret gemessener Latenz-Degradation mit
+    Zahlenbeleg in `observed` (Prinzip V)."""
+
+    tool: str
+    parameter: str
+    probe_class: RateLimitProbeClass
+    outcome: BoundaryOutcome
+    observed: str  # kurze, secret-bereinigte Zusammenfassung inkl. Latenzwerten (Prinzip V)
+
+    def to_dict(self) -> dict:
+        return {
+            "tool": self.tool,
+            "parameter": self.parameter,
+            "probe_class": self.probe_class.value,
+            "outcome": self.outcome.value,
+            "observed": self.observed,
+        }
+
+
 @runtime_checkable
 class DynamicProbe(Protocol):
     """Gemeinsames Minimal-Interface aller Tier-2-Proben (AuthProbe, UrlFetchProbe):

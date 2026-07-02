@@ -1,8 +1,8 @@
 # Implementation Plan: RATE_LIMITING (009-rate-limiting)
 
-**Spec**: [`spec.md`](./spec.md) | **Status**: Design entschieden — NICHT
-IMPLEMENTIERT. Beide offenen Design-Punkte nach Best Practice festgelegt
-(siehe unten). Bereit für Phase 1 auf Signal.
+**Spec**: [`spec.md`](./spec.md) | **Status**: IMPLEMENTIERT (2026-07-02).
+Beide Design-Punkte wie unten festgelegt umgesetzt; keine Transport-/Core-
+Änderung war nötig. Volle Suite grün (123/123).
 
 ## Technical Context
 

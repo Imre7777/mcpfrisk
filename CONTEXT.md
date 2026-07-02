@@ -310,8 +310,27 @@ Priorisiert nach Recherche-Relevanz:
    `owasp_mcp_ref="MCP08"` ist bewusst nur ein Best-Effort-Näherungswert,
    CWE-209 die eigentlich präzise Referenz. Read-only, rein `call()`-basiert,
    stdlib-only.
-6. **`RATE_LIMITING`** — parallele Last erzeugen, auf fehlende
-   Constraints prüfen.
+6. **`RATE_LIMITING`** ✅ **ERLEDIGT** (Spec `009-rate-limiting`) — misst eine
+   Baseline-Latenz und sendet danach einen kurzen, begrenzten, SCHNELLEN
+   SEQUENZIELLEN Burst (v1 bewusst ohne echte Multi-Thread-Parallelität --
+   `StdioTransport`s gemeinsamer Subprozess-Kanal wäre dafür nicht
+   thread-sicher, keine Transport-Änderung nötig) an ein lesendes Tool.
+   Wertet nur harte Signale: ein explizites Drossel-Signal (429/erkennbarer
+   Rate-Limit-Text) irgendwo im Burst → sofort ENFORCED; ein
+   Liveness-Recheck-Fehlschlag nach dem Burst → bewiesener Crash (HIGH,
+   CWE-400); eine gemessene Latenz-Degradation ohne Drosselung → Beleg für
+   unkontrollierten Ressourcenverbrauch (MEDIUM, CWE-400/CWE-770). Bewusst
+   **kein** `owasp_mcp_ref` -- keine der zehn offiziellen OWASP-MCP-Top-10-
+   Kategorien hat einen erkennbaren Bezug zu Resource-Exhaustion/DoS (anders
+   als bei ERROR_LEAKAGE, wo MCP08 zumindest lose passte). Burst-Umfang
+   fest/klein (CI-tauglich, kein andauernder Last-Test). Read-only, rein
+   `call()`-basiert, stdlib-only.
+
+   **Damit ist die ursprüngliche Tier-2-Roadmap vollständig umgesetzt:**
+   alle sechs geplanten dynamischen Checks (`AUTH_BOUNDARY`, `SSRF_CHECK`,
+   `RBAC_CROSS_TENANT`, `SCHEMA_FUZZING`, `ERROR_LEAKAGE`, `RATE_LIMITING`)
+   sind implementiert, getestet und registriert. Weitere Arbeit siehe
+   Tier 3 (Supply-Chain & Spec-Compliance) unten.
 
 ### Tier 3 — Supply-Chain & Spec-Compliance
 
