@@ -38,6 +38,11 @@ _CLIENT_INFO = {"name": "mcpfrisk", "version": "0.1.0"}
 _MODERN_PROTOCOL = "2026-07-28"
 _LEGACY_PROTOCOL = "2025-11-25"
 _GRACE_SECONDS = 2.0
+# Obergrenze für eine einzelne stdout-Zeile, bevor sie vollständig gepuffert
+# wird -- ohne das puffert eine extrem lange (oder nie mit Newline
+# abgeschlossene) Zeile unbegrenzt Speicher. Überschreitung wird wie EOF
+# behandelt (Kanal gilt als tot -> DynamicTransportError).
+_MAX_LINE_BYTES = 10 * 1024 * 1024
 
 
 def _client_meta() -> dict:
@@ -67,12 +72,53 @@ class StdioServerHandle:
         self._reader: threading.Thread | None = None
         self._lines: queue.Queue = queue.Queue()
         self._next_id = 0
+        # Vom Reader-Thread gesetztes EOF-Signal für die AKTUELLE Prozess-
+        # Generation (eine frische Liste pro start(), s.u.). `proc.poll()`
+        # allein reicht nicht: direkt nach einem Crash liefert poll() auf
+        # Windows/CPython noch kurz None, bevor der Exit-Code eingesammelt
+        # ist (empirisch verifizierter Race) -- das EOF-Signal des Readers
+        # ist dagegen synchron mit der stdout-Schließung.
+        self._eof_seen: list[bool] = [False]
 
     def start(self) -> None:
+        # Bereits gestartet (lebendig ODER tot) -> kein automatischer
+        # Neustart hier; das ist bewusst so (Neustart nur explizit über
+        # restart(), s.u.). Ein automatischer Respawn in start() würde z.B.
+        # SCHEMA_FUZZINGs/RATE_LIMITINGs Crash-Beweis per Liveness-Recheck
+        # unterlaufen: ein neuer Prozess antwortet wieder normal, obwohl der
+        # geprobte Prozess wirklich abgestürzt ist.
         if self._proc is not None:
             return
         if not self.argv:
             raise DynamicTransportError("leeres stdio-Kommando")
+        self._spawn()
+
+    def restart(self) -> None:
+        """Erzwingt einen FRISCHEN Prozess, auch wenn der aktuelle Handle
+        noch gesetzt ist. Nur für die Era-Negotiation gedacht (siehe
+        `_StdioChannel.ensure_negotiated`): stirbt der Prozess schon bei der
+        modern-Probe (`server/discover`), bekommt der legacy-Fallback
+        (`initialize`) sonst nie eine echte Chance -- der tote Handle würde
+        wiederverwendet (Bug: toter Handle wiederverwendet). Bewusst NICHT
+        das Verhalten von `start()` selbst, weil ein bereits aktiv genutzter
+        Kanal (nach erfolgreicher Verhandlung) NIE automatisch respawnen
+        darf, sonst wäre ein echter Prozess-Crash während des eigentlichen
+        Checks nicht mehr vom Liveness-Recheck unterscheidbar."""
+        old_proc = self._proc
+        if self._reader is not None:
+            self._reader.join(timeout=_GRACE_SECONDS)
+        self._reader = None
+        self._lines = queue.Queue()  # frische Queue: kein stales EOF-Sentinel
+        self._next_id = 0
+        self._proc = None
+        if old_proc is not None:
+            # Alten (vermutlich toten) Prozess sauber beenden statt als
+            # Waise laufen zu lassen (Bug beim ersten restart()-Entwurf:
+            # der Handle wurde abgeworfen, ohne den Prozess zu terminieren).
+            self._terminate(old_proc)
+        self.start()
+
+    def _spawn(self) -> None:
         try:
             self._proc = subprocess.Popen(  # noqa: S603 - command is operator-provided by design
                 self.argv,
@@ -85,20 +131,40 @@ class StdioServerHandle:
             raise DynamicTransportError(
                 f"konnte stdio-Server nicht starten ({self.argv[0]!r}): {exc}"
             ) from exc
-        self._reader = threading.Thread(target=self._read_loop, daemon=True)
+        self._eof_seen = [False]  # frisches Signal für diese Prozess-Generation
+        self._reader = threading.Thread(
+            target=self._read_loop, args=(self._proc, self._lines, self._eof_seen), daemon=True
+        )
         self._reader.start()
 
-    def _read_loop(self) -> None:
-        proc = self._proc
-        if proc is None or proc.stdout is None:
+    def _read_loop(
+        self, proc: subprocess.Popen, out_queue: queue.Queue, eof_seen: list[bool]
+    ) -> None:
+        # proc/out_queue/eof_seen werden als feste Argumente übergeben (nicht
+        # dynamisch über self.gelesen), damit ein alter Reader-Thread nach
+        # einem Neustart (frischer Prozess, frische Queue) garantiert NIE die
+        # neue Generation beeinflusst -- sonst könnte sein EOF-Sentinel die
+        # Antwort-Korrelation des neuen Kanals verfälschen, oder sein Signal
+        # fälschlich die Liveness des neuen Prozesses zurücksetzen.
+        if proc.stdout is None:
+            eof_seen[0] = True
             return
         try:
-            for raw in proc.stdout:  # newline-delimited
-                self._lines.put(raw)
+            while True:
+                raw = proc.stdout.readline(_MAX_LINE_BYTES + 1)
+                if not raw:
+                    break  # EOF
+                if len(raw) > _MAX_LINE_BYTES:
+                    # Zeile überschreitet die Obergrenze (z.B. kein Newline
+                    # innerhalb des Limits) -- Kanal als beendet behandeln,
+                    # statt weiter unbegrenzt zu puffern.
+                    break
+                out_queue.put(raw)
         except (OSError, ValueError):
             pass
         finally:
-            self._lines.put(None)  # EOF-Sentinel
+            eof_seen[0] = True  # synchrones Liveness-Signal, kein poll()-Race
+            out_queue.put(None)  # EOF-Sentinel
 
     def _write(self, message: dict) -> None:
         proc = self._proc
@@ -153,8 +219,17 @@ class StdioServerHandle:
     def close(self) -> None:
         proc = self._proc
         self._proc = None
-        if proc is None:
-            return
+        if proc is not None:
+            self._terminate(proc)
+        if self._reader is not None:
+            self._reader.join(timeout=_GRACE_SECONDS)
+            self._reader = None
+
+    @staticmethod
+    def _terminate(proc: subprocess.Popen) -> None:
+        """Beendet einen Prozess zuverlässig (Streams schließen, terminate,
+        bei Bedarf kill) -- geteilt zwischen close() und restart(), damit ein
+        beim Neustart abgeworfener alter Prozess nicht als Waise weiterläuft."""
         for stream in (proc.stdin, proc.stdout):
             try:
                 if stream is not None:
@@ -171,9 +246,6 @@ class StdioServerHandle:
                     proc.wait(timeout=_GRACE_SECONDS)
                 except subprocess.TimeoutExpired:
                     pass
-        if self._reader is not None:
-            self._reader.join(timeout=_GRACE_SECONDS)
-            self._reader = None
 
 
 class _StdioChannel:
@@ -198,6 +270,14 @@ class _StdioChannel:
             )
         except DynamicTransportError:
             resp = None
+            if self.handle._eof_seen[0]:
+                # Die modern-Probe hat den Prozess NACHWEISLICH getötet (EOF,
+                # nicht nur ein Timeout) -- für den legacy-Fallback einen
+                # frischen Prozess starten, sonst bekommt initialize nie eine
+                # echte Chance (Bug: toter Handle wiederverwendet). Ein reiner
+                # Timeout (Prozess evtl. noch am Leben) löst KEINEN Neustart
+                # aus -- der legacy-Fallback probiert dann denselben Handle.
+                self.handle.restart()
 
         if isinstance(resp, dict) and "error" not in resp:
             self.era = "modern"
@@ -206,7 +286,7 @@ class _StdioChannel:
         # 2) Fallback: Legacy-Handshake (initialize + notifications/initialized).
         self.era = "legacy"
         try:
-            self.handle.request(
+            init_resp = self.handle.request(
                 "initialize",
                 {
                     "protocolVersion": _LEGACY_PROTOCOL,
@@ -215,11 +295,17 @@ class _StdioChannel:
                 },
                 timeout_s=timeout_s,
             )
-            self.handle.notify("notifications/initialized")
         except DynamicTransportError:
             # Handshake gescheitert -> folgende call()s laufen in den Timeout und
             # werden vom Check als INCONCLUSIVE gewertet (Prinzip III).
-            pass
+            return
+        if isinstance(init_resp, dict) and "error" in init_resp:
+            # Server hat den Handshake explizit abgelehnt (z.B. protocolVersion
+            # nicht unterstützt) -- NICHT als erfolgreich verhandelt behandeln
+            # und KEIN notifications/initialized senden (Bug: wurde bisher nie
+            # geprüft, die Session galt fälschlich als verhandelt).
+            return
+        self.handle.notify("notifications/initialized")
 
 
 class StdioTransport:

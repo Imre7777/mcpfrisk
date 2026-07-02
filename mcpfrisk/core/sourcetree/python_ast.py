@@ -25,6 +25,19 @@ from mcpfrisk.core.sourcetree.model import (
 _ENV_HINTS = ("os.environ", "os.getenv", "getenv(", "process.env", "dotenv")
 
 
+def _iter_dfs(node: ast.AST):
+    """Preorder-Tiefensuche in Quellcode-/Ausführungsreihenfolge -- anders als
+    `ast.walk()` (breadth-first: alle Knoten einer Ebene vor der nächsten).
+    Für Taint-Tracking über body_assignments wichtig: eine Zuweisung in einem
+    verschachtelten Block (z.B. innerhalb `if`) muss VOR einer nachfolgenden
+    Zuweisung auf Modulebene erscheinen, wenn sie im Quelltext zuerst steht --
+    `ast.walk()` liefert das in falscher Reihenfolge (Bug: verschachtelte
+    Zuweisung wurde nicht als Taint-Quelle erkannt)."""
+    yield node
+    for child in ast.iter_child_nodes(node):
+        yield from _iter_dfs(child)
+
+
 def parse_file(path: Path) -> SourceModel:
     try:
         text = path.read_text(encoding="utf-8", errors="ignore")
@@ -42,8 +55,40 @@ class PythonSourceModel(SourceModel):
         self._text = text
         self._tree = tree
         self._lines = text.splitlines()
+        self._import_aliases = self._build_import_aliases()
 
     # -- helpers -----------------------------------------------------------
+
+    def _build_import_aliases(self) -> dict[str, str]:
+        """Bildet 'lokaler Name -> voll-qualifizierter Name' für Import-Aliase,
+        damit z.B. `import subprocess as sp; sp.run(...)` oder
+        `from subprocess import run; run(...)` denselben Callee-Namen liefern
+        wie `subprocess.run(...)` -- sonst umgeht jeder Alias/Direct-Import
+        die dangerous-call-Erkennung in command_injection.py/path_traversal.py
+        vollständig (Bug: Import-Alias-Bypass)."""
+        aliases: dict[str, str] = {}
+        for node in ast.walk(self._tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    local = alias.asname or alias.name
+                    if local != alias.name:
+                        aliases[local] = alias.name  # "sp" -> "subprocess"
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                for alias in node.names:
+                    local = alias.asname or alias.name
+                    aliases[local] = f"{node.module}.{alias.name}"  # "run" -> "subprocess.run"
+        return aliases
+
+    def _resolve_alias(self, dotted: str) -> str:
+        if not dotted:
+            return dotted
+        if dotted in self._import_aliases:
+            return self._import_aliases[dotted]
+        head, sep, rest = dotted.partition(".")
+        target = self._import_aliases.get(head)
+        if sep and target is not None and "." not in target:
+            return f"{target}.{rest}"
+        return dotted
 
     def _snippet(self, lineno: int) -> str:
         if 0 < lineno <= len(self._lines):
@@ -74,6 +119,7 @@ class PythonSourceModel(SourceModel):
         a.referenced_names = {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
         if isinstance(node, (ast.List, ast.Tuple)):
             a.is_array = True
+            a.array_items = [self._arg(el) for el in node.elts]
         elif isinstance(node, ast.Constant):
             if isinstance(node.value, str):
                 a.is_constant_string = True
@@ -101,7 +147,7 @@ class PythonSourceModel(SourceModel):
         args = [self._arg(a) for a in node.args]
         keywords = {kw.arg: self._arg(kw.value) for kw in node.keywords if kw.arg}
         return CallSite(
-            callee=self._callee_name(node.func),
+            callee=self._resolve_alias(self._callee_name(node.func)),
             line=node.lineno,
             snippet=self._call_snippet(node),
             args=args,
@@ -143,9 +189,9 @@ class PythonSourceModel(SourceModel):
                 name = self._callee_name(d.func) if isinstance(d, ast.Call) else self._callee_name(d)
                 if name:
                     decorators.append(name)
-            body_calls = [self._call(n) for n in ast.walk(node) if isinstance(n, ast.Call)]
+            body_calls = [self._call(n) for n in _iter_dfs(node) if isinstance(n, ast.Call)]
             body_assignments: list[Assignment] = []
-            for n in ast.walk(node):
+            for n in _iter_dfs(node):
                 if isinstance(n, (ast.Assign, ast.AnnAssign)):
                     body_assignments.extend(self._assignments_from(n))
             out.append(
@@ -168,12 +214,35 @@ class PythonSourceModel(SourceModel):
                 continue
             if not self._looks_like_tool(node):
                 continue
-            out.append(ToolDefinition(node.name, ast.get_docstring(node) or "", node.lineno))
+            # Ein Tool kann seine ans Modell gehende Beschreibung über den
+            # Docstring ODER über ein @mcp.tool(description="...")-Kwarg
+            # bekommen (beides sind dokumentierte MCP-SDK-Formen) -- beide
+            # Quellen zusammenführen, damit ein Angriffsmuster in KEINER von
+            # beiden unentdeckt bleibt (Bug: description-Kwarg wurde ignoriert).
+            parts = [ast.get_docstring(node), self._decorator_description(node)]
+            description = " ".join(p for p in parts if p)
+            out.append(ToolDefinition(node.name, description, node.lineno))
         return out
 
     @staticmethod
     def _looks_like_tool(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
         return any("tool" in ast.dump(d).lower() for d in node.decorator_list)
+
+    @staticmethod
+    def _decorator_description(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
+        """Liest description="..." aus einem Decorator-Aufruf wie
+        @mcp.tool(description="..."), falls vorhanden."""
+        for d in node.decorator_list:
+            if not isinstance(d, ast.Call):
+                continue
+            for kw in d.keywords:
+                if (
+                    kw.arg == "description"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
+                    return kw.value.value
+        return None
 
     def string_literals(self) -> list[StringLiteral]:
         out: list[StringLiteral] = []

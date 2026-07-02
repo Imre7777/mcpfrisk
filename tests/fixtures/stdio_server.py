@@ -229,10 +229,23 @@ def _handle(method: str, rid: object, req: dict, era: str, mode: str, toolset: s
                 "capabilities": {"tools": {}},
                 "serverInfo": _SERVER_INFO,
             })
+        elif era == "crash-on-discover":
+            # Simuliert einen naiven Server, der auf eine unbekannte
+            # Top-Level-Methode nicht mit einem JSON-RPC-Fehler antwortet,
+            # sondern crasht (Prozess stirbt) -- Regressionstest für den
+            # legacy-Fallback: der muss einen FRISCHEN Prozess starten statt
+            # den toten Handle wiederzuverwenden.
+            raise RuntimeError("simulated: naive server crashes on unrecognized method")
         else:
             _error(rid, -32601, "Method not found")
         return
     if method == "initialize":
+        if era == "reject-initialize":
+            # Server lehnt den Handshake explizit ab (z.B. protocolVersion
+            # nicht unterstützt) -- Regressionstest: darf NICHT als
+            # erfolgreich verhandelt behandelt werden.
+            _error(rid, -32602, "Invalid params: unsupported protocolVersion")
+            return
         _result(rid, {
             "protocolVersion": _LEGACY_PROTOCOL,
             "capabilities": {"tools": {}},
@@ -289,7 +302,11 @@ def _handle(method: str, rid: object, req: dict, era: str, mode: str, toolset: s
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--era", choices=["legacy", "modern"], default="legacy")
+    parser.add_argument(
+        "--era",
+        choices=["legacy", "modern", "crash-on-discover", "reject-initialize"],
+        default="legacy",
+    )
     parser.add_argument(
         "--mode",
         choices=["vulnerable", "clean", "silent", "throttled", "degrading", "crash", "fast"],

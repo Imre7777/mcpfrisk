@@ -93,7 +93,7 @@ def print_dynamic_report(result: DynamicScanResult) -> None:
         print(f"\nGesamt: {len(findings)} Finding(s)\n")
     elif result.checks_run:
         # Mindestens ein Check kam zu einem Urteil und fand nichts.
-        print("✅ Keine AUTH_BOUNDARY-Findings.\n")
+        print(f"✅ Keine Findings ({', '.join(result.checks_run)}).\n")
 
     _print_inconclusive_details(result)
 

@@ -53,6 +53,15 @@ JS_DANGEROUS_PATTERNS = [
     re.compile(r"spawn\s*\(\s*[`\"']/bin/(sh|bash)"),
 ]
 
+# Shell-Interpreter-Namen: als erstes Argument/args[0] einer "sicheren"
+# Argument-Liste geben sie trotzdem eine Shell frei ("sh -c <string>" ist
+# äquivalent zu shell=True), unabhängig vom shell=-Kwarg bzw. davon, dass
+# execFile/spawn(args-array) sonst als sicher gilt.
+_SHELL_INTERPRETER_NAMES = {
+    "sh", "bash", "zsh", "dash", "ksh",
+    "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh",
+}
+
 
 class CommandInjectionCheck(BaseCheck):
     check_id = "CMD_INJECTION"
@@ -115,9 +124,33 @@ class CommandInjectionCheck(BaseCheck):
             shell = call.keywords.get("shell")
             shell_true = shell is not None and shell.is_truthy_constant
             if first.is_array:
+                # "sh -c <tainted>" (bzw. bash/cmd/powershell) öffnet eine Shell
+                # durch den Interpreter selbst -- unabhängig von shell=True.
+                if self._is_shell_c_array(first.array_items):
+                    return (
+                        Severity.CRITICAL,
+                        f"{call.callee} übergibt eine Argument-Liste, deren erstes "
+                        "Element ein Shell-Interpreter ist (sh/bash/cmd/...) und ein "
+                        "späteres Element nicht konstant ist -- 'sh -c <tainted>' ist "
+                        "unabhängig von shell=True eine vollständige Command "
+                        "Injection, weil der Interpreter selbst die Shell öffnet.",
+                    )
                 if not shell_true:
                     return None, ""
-                # Array-Befehl + shell=True: kein interpolierter String, also kein
+                if self._array_has_interpolated_element(first.array_items):
+                    # shell=True + Liste: Python führt args[0] als Shell-Befehlsstring
+                    # aus (Rest als zusätzliche Shell-Argumente) -- eine Interpolation
+                    # in einem Element ist daher derselbe direkte RCE-Pfad wie ein
+                    # interpolierter String ohne Liste.
+                    return (
+                        Severity.CRITICAL,
+                        f"{call.callee} übergibt ein Argument-Listen-Element mit "
+                        "Interpolation (f-string/.format()/Konkatenation) bei aktivem "
+                        "shell=True. Bei shell=True wird args[0] als Shell-"
+                        "Befehlsstring ausgeführt -- eine Interpolation darin ist "
+                        "vollständige Command Injection.",
+                    )
+                # Array-Befehl + shell=True, aber kein interpoliertes Element: kein
                 # direkter Injection-Pfad. shell=True ist hier redundant/irreführend.
                 # Laut Severity-Rubrik (Prinzip V) ein Best-Practice-Verstoß = MEDIUM,
                 # NICHT CRITICAL. Der Befund wird weiterhin gemeldet (Prinzip III).
@@ -152,7 +185,28 @@ class CommandInjectionCheck(BaseCheck):
             return None, ""
 
         # JS/TS: exec()/execSync()/spawn() öffnen eine Shell, execFile() nicht.
-        if first.is_array or first.is_constant_string:
+        if first.is_constant_string:
+            # spawn("sh", ["-c", tainted]) / spawn("bash", [...]) -- der
+            # Interpreter-Name als args[0] öffnet die Shell, das eigentliche
+            # gefährliche Element steckt im zweiten (Array-)Argument.
+            interpreter = self._shell_literal(first.text)
+            second = call.args[1] if len(call.args) > 1 else None
+            if (
+                interpreter is not None
+                and second is not None
+                and second.is_array
+                and self._array_has_tainted_element(second.array_items)
+            ):
+                return (
+                    Severity.CRITICAL,
+                    f"{call.callee}('{interpreter}', [...]) ruft den Shell-"
+                    f"Interpreter '{interpreter}' mit einem Argument-Array auf, das "
+                    "ein nicht-konstantes Element enthält (klassisches "
+                    "'sh -c <tainted>'-Muster) -- vollständige Command Injection, "
+                    "unabhängig davon, dass ein Array-Argument sonst als sicher gilt.",
+                )
+            return None, ""
+        if first.is_array:
             return None, ""
         if first.has_interpolation:
             return (
@@ -167,6 +221,34 @@ class CommandInjectionCheck(BaseCheck):
                 "(teilweise) aus Eingaben stammt, ist das Command Injection.",
             )
         return None, ""
+
+    @staticmethod
+    def _shell_literal(text: str) -> str | None:
+        """Erkennt, ob ein konstantes String-Argument ein Shell-Interpreter-Name
+        ist (auch pfad-qualifiziert, z.B. '/bin/sh'). None, wenn nicht."""
+        literal = text.strip().strip("'\"`")
+        name = literal.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+        return name if name.lower() in _SHELL_INTERPRETER_NAMES else None
+
+    @classmethod
+    def _is_shell_c_array(cls, items: list) -> bool:
+        """True, wenn das erste Array-Element ein Shell-Interpreter-Name ist
+        UND ein späteres Element nicht konstant (also potenziell tainted) ist --
+        das 'sh -c <tainted>'-Muster, das eine Shell unabhängig von shell=True
+        öffnet."""
+        if not items or not items[0].is_constant_string:
+            return False
+        if cls._shell_literal(items[0].text) is None:
+            return False
+        return cls._array_has_tainted_element(items[1:])
+
+    @staticmethod
+    def _array_has_interpolated_element(items: list) -> bool:
+        return any(it.has_interpolation for it in items)
+
+    @staticmethod
+    def _array_has_tainted_element(items: list) -> bool:
+        return any(not it.is_constant_string for it in items)
 
     def _make_finding(
         self, model: SourceModel, call: CallSite, severity: Severity, reason: str

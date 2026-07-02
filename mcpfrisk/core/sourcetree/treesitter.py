@@ -77,8 +77,26 @@ class JsTsSourceModel(SourceModel):
         self._data = data
         self._root = tree.root_node
         self._lines = data.decode("utf-8", "replace").splitlines()
+        self._import_aliases = self._build_import_aliases()
 
     # -- helpers -----------------------------------------------------------
+
+    def _build_import_aliases(self) -> dict[str, str]:
+        """Bildet 'lokaler Name -> Original-Name' für benannte Import-Aliase
+        (`import { exec as run } from "child_process"`), damit der lokale Alias
+        `run` bei der Gefährlichkeits-Prüfung als `exec` erkannt wird -- sonst
+        umgeht jeder Import-Alias die dangerous-segment-Erkennung vollständig
+        (Bug: Import-Alias-Bypass)."""
+        aliases: dict[str, str] = {}
+        for n in self._walk():
+            if n.type != "import_specifier":
+                continue
+            name_node = n.child_by_field_name("name")
+            alias_node = n.child_by_field_name("alias")
+            if name_node is None or alias_node is None:
+                continue
+            aliases[self._text(alias_node)] = self._text(name_node)
+        return aliases
 
     def _text(self, node) -> str:
         return self._data[node.start_byte:node.end_byte].decode("utf-8", "replace")
@@ -104,13 +122,24 @@ class JsTsSourceModel(SourceModel):
         if node is None:
             return ""
         if node.type == "identifier":
-            return self._text(node)
+            return self._import_aliases.get(self._text(node), self._text(node))
         if node.type == "member_expression":
             obj = node.child_by_field_name("object")
             prop = node.child_by_field_name("property")
             base = self._member_name(obj)
             pn = self._text(prop) if prop else ""
             return f"{base}.{pn}" if base else pn
+        if node.type == "subscript_expression":
+            # Computed member access mit String-Literal-Index (cp["exec"]) auf
+            # eine reguläre member_expression abbilden -- ein nicht-literaler
+            # Index (cp[dynamicKey]) bleibt statisch nicht auflösbar.
+            obj = node.child_by_field_name("object")
+            idx = node.child_by_field_name("index")
+            base = self._member_name(obj)
+            if idx is not None and idx.type in _STRING_TYPES:
+                prop = self._string_value(idx)
+                return f"{base}.{prop}" if base else prop
+            return self._text(node)
         return self._text(node)
 
     def _identifiers(self, node) -> set[str]:
@@ -137,6 +166,7 @@ class JsTsSourceModel(SourceModel):
         t = node.type
         if t == "array":
             a.is_array = True
+            a.array_items = [self._arg(el) for el in node.named_children]
         elif t == "string":
             a.is_constant_string = True
         elif t == "template_string":

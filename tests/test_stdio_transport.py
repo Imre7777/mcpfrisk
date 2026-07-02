@@ -107,3 +107,49 @@ class TestAuthBoundaryOverStdio:
         result = DynamicRunner(timeout_s=2.0).run("stdio:__mcpfrisk_no_such_cmd__")
         assert result.findings == []
         assert "AUTH_BOUNDARY" in result.checks_inconclusive
+
+
+# ---------------------------------------------------------------------------
+# Post-Audit-Hardening: Era-Negotiation-Robustheit (Bugs 2 + 3)
+# ---------------------------------------------------------------------------
+class TestEraNegotiationRobustness:
+    def test_legacy_fallback_spawns_fresh_process_after_modern_probe_crash(self):
+        """Regressionstest (Bug 2): stirbt der Prozess bei der modern-Probe
+        (server/discover) -- z.B. weil ein naiver Server auf eine unbekannte
+        Methode nicht mit einem JSON-RPC-Fehler antwortet, sondern crasht --
+        MUSS der legacy-Fallback (initialize) einen FRISCHEN Prozess starten.
+        Vorher wurde der tote Handle wiederverwendet, wodurch die gesamte
+        Session dauerhaft INCONCLUSIVE blieb, ohne dass initialize je eine
+        echte Chance bekam."""
+        session = _stdio_session("crash-on-discover", "vulnerable", timeout_s=3.0)
+        try:
+            result = session.call("tools/list")
+        finally:
+            session.close()
+        assert "tools" in result
+
+    def test_rejected_initialize_does_not_send_initialized_notification(self, monkeypatch):
+        """Regressionstest (Bug 3): lehnt der Server initialize explizit ab
+        (JSON-RPC-Fehler), darf notifications/initialized NICHT trotzdem
+        gesendet werden -- vorher wurde die initialize-Antwort nie auf
+        'error' geprüft, die Session galt fälschlich als verhandelt."""
+        from mcpfrisk.core.stdio_transport import StdioServerHandle
+
+        notified: list[str] = []
+        original_notify = StdioServerHandle.notify
+
+        def spy_notify(self, method, params=None):
+            notified.append(method)
+            return original_notify(self, method, params)
+
+        monkeypatch.setattr(StdioServerHandle, "notify", spy_notify)
+
+        session = _stdio_session("reject-initialize", "vulnerable", timeout_s=2.0)
+        try:
+            try:
+                session.call("tools/list", timeout_s=1.0)
+            except Exception:
+                pass  # erwartet: der Server ist nie sauber initialisiert
+        finally:
+            session.close()
+        assert "notifications/initialized" not in notified

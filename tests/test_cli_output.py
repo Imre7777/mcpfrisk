@@ -36,3 +36,19 @@ def test_make_output_utf8_safe_is_idempotent_and_safe():
     # Calling the hardening helper must never raise, even repeatedly.
     cli._make_output_utf8_safe()
     cli._make_output_utf8_safe()
+
+
+def test_dynamic_report_success_message_names_the_actual_check(capsys):
+    """Regressionstest: die 'keine Findings'-Erfolgsmeldung im dynamischen
+    Report war hartcodiert auf 'Keine AUTH_BOUNDARY-Findings', obwohl bis zu
+    6 verschiedene Tier-2-Checks laufen können (SSRF_CHECK, RBAC_CROSS_TENANT,
+    SCHEMA_FUZZING, ERROR_LEAKAGE, RATE_LIMITING). Die Meldung muss den
+    tatsächlich gelaufenen Check nennen, nicht immer AUTH_BOUNDARY."""
+    from mcpfrisk.core.models import DynamicScanResult
+    from mcpfrisk.core.report import print_dynamic_report
+
+    result = DynamicScanResult(target="http://localhost:8000/mcp", checks_run=["SSRF_CHECK"])
+    print_dynamic_report(result)
+    out = capsys.readouterr().out
+    assert "SSRF_CHECK" in out
+    assert "AUTH_BOUNDARY" not in out

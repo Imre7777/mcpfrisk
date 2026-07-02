@@ -17,21 +17,35 @@ import re
 from pathlib import Path
 
 from mcpfrisk.core.base_check import BaseCheck
-from mcpfrisk.core.fs import rglob_or_file
+from mcpfrisk.core.fs import DEFAULT_EXCLUDED_DIRS, SOURCE_GLOBS, rglob_or_file
 from mcpfrisk.core.models import Finding, Severity
 from mcpfrisk.core.sourcetree import SourceModel, analyze, jsts_available
+
+# Nicht-Code-Dateien, die nur zeilenbasiert (nie AST-gescoped) geprüft werden.
+_NON_CODE_GLOBS = ("*.json", "*.env", "*.yaml", "*.yml")
 
 # Code-Dateien, die AST-gescoped statt zeilenbasiert geprüft werden (sofern der
 # Parser verfügbar ist). Für alles andere (JSON/ENV/YAML, oder JS/TS ohne das
 # jsts-Extra) bleibt der Zeilen-Scan als Fallback.
 _AST_SUFFIXES = {".py", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".mts", ".cts", ".tsx"}
 
-# Bekannte Key-Formate mit hoher Präzision (wenig False Positives)
+# Bekannte Key-Formate mit hoher Präzision (wenig False Positives).
+# Reihenfolge UND die "(?!ant-)"-Ausschlüsse in der OpenAI-Regex sind bewusst:
+# "sk-ant-..." (Anthropic) matchte zuvor auch die generische OpenAI-Alternative
+# "sk-<20+ Zeichen>", wodurch Anthropic-Keys fälschlich als "OpenAI API Key"
+# gemeldet wurden (Regex-Reihenfolge-Bug). Anthropic wird jetzt zuerst geprüft
+# UND die OpenAI-Regex schließt das "ant-"-Präfix explizit aus -- robust
+# unabhängig von der Dict-Iterationsreihenfolge.
 KNOWN_KEY_PATTERNS = {
-    "OpenAI API Key": re.compile(r"sk-[a-zA-Z0-9_-]{2,}-[a-zA-Z0-9]{20,}|sk-[a-zA-Z0-9]{20,}"),
     "Anthropic API Key": re.compile(r"sk-ant-[a-zA-Z0-9\-_]{20,}"),
-    "AWS Access Key": re.compile(r"AKIA[0-9A-Z]{16}"),
+    "OpenAI API Key": re.compile(
+        r"sk-(?!ant-)[a-zA-Z0-9_-]{2,}-[a-zA-Z0-9]{20,}|sk-(?!ant-)[a-zA-Z0-9]{20,}"
+    ),
+    # AKIA (langlebiger IAM-User-Key), ASIA (STS-Temporary-Credentials),
+    # ABIA (AWS-STS-Service-Bearer-Token), ACCA (Context-spezifische Credentials).
+    "AWS Access Key": re.compile(r"(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}"),
     "GitHub Token": re.compile(r"gh[pousr]_[a-zA-Z0-9]{36,}"),
+    "GitHub Fine-Grained PAT": re.compile(r"github_pat_[a-zA-Z0-9_]{20,}"),
     "Slack Token": re.compile(r"xox[baprs]-[0-9a-zA-Z\-]{10,}"),
     "Generic Bearer Token in Code": re.compile(
         r"(?i)(authorization|bearer)[\"'\s:=]+[a-zA-Z0-9_\-\.]{20,}"
@@ -57,7 +71,10 @@ class HardcodedSecretsCheck(BaseCheck):
 
     def run(self, target_path: Path) -> list[Finding]:
         findings: list[Finding] = []
-        extensions = ("*.py", "*.js", "*.ts", "*.json", "*.env", "*.yaml", "*.yml")
+        # SOURCE_GLOBS deckt auch .jsx/.mjs/.cjs/.mts/.cts/.tsx ab (Bug: diese
+        # Erweiterungen wurden bisher NIE gescannt, weil eine eigene, engere
+        # Liste statt der gemeinsamen fs.SOURCE_GLOBS verwendet wurde).
+        extensions = SOURCE_GLOBS + _NON_CODE_GLOBS
         seen_files = set()
 
         for ext in extensions:
@@ -163,11 +180,10 @@ class HardcodedSecretsCheck(BaseCheck):
 
     @staticmethod
     def _is_excluded(path: Path) -> bool:
-        excluded = {"node_modules", ".venv", "venv", "__pycache__", "dist", "build", ".git"}
         # .env.example / .env.sample sind Templates, keine echten Secrets
         if path.name in (".env.example", ".env.sample", ".env.template"):
             return True
-        return any(part in excluded for part in path.parts)
+        return any(part in DEFAULT_EXCLUDED_DIRS for part in path.parts)
 
     def _scan_file(self, file_path: Path) -> list[Finding]:
         findings = []

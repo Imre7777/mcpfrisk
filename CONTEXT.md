@@ -173,6 +173,68 @@ absichtlich verwundbares UND ein absichtlich sauberes Fixture getestet
 werden, bevor er als "fertig" gilt. Nur gegen die verwundbare Seite zu
 testen hätte alle drei Bugs oben übersehen.
 
+### 4.1 Post-Audit-Hardening (2026-07-02): 12 verifizierte Bugs aus einer
+vollständigen Tier-1/Tier-2-Codebasis-Review
+
+Ein systematischer Review (zwei parallele Deep-Dives, Tier 1 statisch +
+Tier 2 dynamisch) fand 12 konkrete, live verifizierte Bugs — alle gefixt,
+alle als Regressionstests verewigt. Wichtigste Lektionen:
+
+- **CMD_INJECTION/PATH_TRAVERSAL hatten keine Import-Alias-Auflösung**
+  (`import subprocess as sp`, `from subprocess import run`, JS
+  `import { exec as run }`) — der Callee-Name wurde nur syntaktisch
+  verglichen, nie durch Imports aufgelöst. Fix: `PythonSourceModel`/
+  `JsTsSourceModel` bauen jetzt eine Alias-Map und lösen den Callee-Namen
+  vor dem Vergleich auf. **Bei jedem neuen dangerous-call-Check: Import-
+  Alias-Bypass ist der naheliegendste Umgehungsweg, nicht nachträglich
+  dazudenken.**
+- **`ast.walk()` ist breadth-first, nicht Ausführungsreihenfolge** —
+  PATH_TRAVERSAL übersah Taint durch eine Zuweisung in einem verschachtelten
+  `if`/`for`/`try`-Block, weil eine spätere Zuweisung auf Modulebene VOR ihr
+  besucht wurde. Fix: `_iter_dfs()` (echte Preorder-Tiefensuche) in
+  `python_ast.py`. **Bei jeder Taint-Tracking-Logik, die auf Listen-
+  Reihenfolge angewiesen ist: `ast.walk()` liefert NICHT Quelltext-
+  Reihenfolge, sobald verschachtelte Blöcke im Spiel sind.**
+- **TOOL_POISONING las nur `ast.get_docstring()`**, nie das dokumentierte
+  `@mcp.tool(description="...")`-Kwarg — der exakte Angriffsstring aus dem
+  eigenen Modul-Docstring blieb unentdeckt, sobald er als Kwarg statt
+  Docstring übergeben wurde. **Bei MCP-SDK-Decorator-Checks: es gibt oft
+  mehrere äquivalente API-Formen (Kwarg vs. Docstring vs. Objekt-Literal),
+  alle müssen abgedeckt sein.**
+- **`DynamicRunner.run()` hatte kein Sicherheitsnetz um `run_against_server()`**
+  — ein Check, der unerwartet wirft (z.B. `RecursionError` bei extrem
+  verschachtelter Server-Antwort), riss den GESAMTEN Scan mit sich statt nur
+  diesen einen Check als INCONCLUSIVE zu werten. Fix: `except Exception`
+  um genau diesen Aufruf. **Ein `BaseDynamicCheck`-Vertrag ("darf nie
+  werfen") ist nur so stark wie die Runner-Absicherung, die ihn erzwingt.**
+- **stdio-Reader-Thread las `self._lines`/`self._proc` dynamisch statt als
+  gebundene Argumente** — beim ersten Fix-Versuch für einen toten
+  Prozess-Handle (Era-Negotiation-Fallback) schrieb ein alter Reader-Thread
+  sein EOF-Sentinel noch in die NEUE Queue eines frisch gestarteten
+  Prozesses, was dessen Antwort-Korrelation verfälschte. Fix: `proc`/
+  `out_queue`/`eof_seen` als feste Thread-Argumente statt `self.`-Zugriff.
+  Zusätzlich lieferte `proc.poll()` direkt nach einem Crash auf Windows/
+  CPython noch kurz `None` (Race) — ein synchrones EOF-Signal vom
+  Reader-Thread selbst ersetzt die reine `poll()`-Prüfung. **Bei
+  Prozess-Neustart-Logik: jeder Zustand, den ein Hintergrund-Thread
+  mutiert, muss an die konkrete Prozess-/Ressourcen-Generation gebunden
+  sein, nie an ein `self.`-Attribut, das sich unter ihm ändern kann.**
+- **Automatischer Prozess-Neustart nach Crash widersprach dem
+  Crash-Beweis-Mechanismus anderer Checks**: der erste Fix für "toter
+  Handle wird beim Era-Fallback wiederverwendet" (BUG-2) machte `start()`
+  generell auto-respawnend — das ließ SCHEMA_FUZZINGs/RATE_LIMITINGs
+  Liveness-Recheck (der beweisen soll, dass der Prozess WIRKLICH tot ist)
+  fälschlich grün werden, weil ein neuer Prozess antwortete. Fix: Neustart
+  nur über eine explizite `restart()`-Methode, ausschließlich aus dem
+  Era-Negotiation-Fallback heraus aufgerufen, nie aus dem generischen
+  `start()`-Pfad. **Ein Fix für Check A kann den Beweis-Mechanismus von
+  Check B unterlaufen, wenn beide dieselbe Infrastruktur-Methode
+  unterschiedlich interpretieren — nach jedem Core-/Transport-Fix die
+  VOLLE Suite laufen lassen, nicht nur die Tests des eigenen Bugs.**
+
+Volle Liste der 12 Bugs (Findings + Fixes + Regressionstests) im
+Commit-Verlauf ab 2026-07-02 nachvollziehbar.
+
 ---
 
 ## 5. Sicherheits-Recherche-Stand (Kontext für neue Checks)

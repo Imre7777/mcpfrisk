@@ -53,6 +53,7 @@ class Argument:
     has_interpolation: bool = False     # f-string/.format()/Konkat ⇄ Template-Literal mit ${...}
     is_truthy_constant: bool = False    # löst die `shell=True`-artige Flag auf
     referenced_names: set[str] = field(default_factory=set)
+    array_items: list["Argument"] = field(default_factory=list)  # nur befüllt, wenn is_array
 
 
 @dataclass

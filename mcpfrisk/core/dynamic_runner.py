@@ -24,6 +24,7 @@ from typing import Protocol
 from mcpfrisk.core.models import (
     AuthProbe,
     BoundaryOutcome,
+    BoundaryResult,
     CredentialCondition,
     DynamicScanResult,
 )
@@ -31,6 +32,12 @@ from mcpfrisk.core.models import (
 _INVALID_TOKEN = "Bearer not-a-real-token"
 _HTTP_SCHEMES = ("http://", "https://")
 _STDIO_SCHEME = "stdio:"
+# Obergrenze für eine HTTP-Antwort, bevor sie vollständig gepuffert wird --
+# ohne das kann ein böswilliger/kaputter Zielserver (McpFrisks Kernzielgruppe
+# sind noch nicht als vertrauenswürdig geltende Server) McpFrisk selbst per
+# Memory-Exhaustion treffen. Überschreitung -> DynamicTransportError (der
+# Check wertet das wie jeden anderen Transportfehler als INCONCLUSIVE).
+_MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 
 
 @dataclass
@@ -188,14 +195,24 @@ class HttpTransport:
         )
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
-                raw = response.read()
+                raw = self._read_bounded(response)
         except urllib.error.HTTPError as exc:
-            raw = exc.read() or b""  # 4xx/5xx koennen dennoch eine JSON-RPC-Antwort tragen
+            raw = self._read_bounded(exc)  # 4xx/5xx koennen dennoch eine JSON-RPC-Antwort tragen
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             reason = getattr(exc, "reason", exc)
             raise DynamicTransportError(f"{type(exc).__name__} ({reason})") from exc
 
         return self._parse_jsonrpc_result(raw)
+
+    @staticmethod
+    def _read_bounded(response) -> bytes:
+        raw = response.read(_MAX_RESPONSE_BYTES + 1) or b""
+        if len(raw) > _MAX_RESPONSE_BYTES:
+            raise DynamicTransportError(
+                f"Antwort überschreitet die {_MAX_RESPONSE_BYTES} Byte Obergrenze -- "
+                "abgebrochen (Schutz vor Memory-Exhaustion durch den Zielserver)"
+            )
+        return raw
 
     @staticmethod
     def _parse_jsonrpc_result(raw: bytes) -> dict:
@@ -316,7 +333,24 @@ class DynamicRunner:
                     result.checks_inconclusive.append(check.check_id)
                     continue
 
-                boundary = check.run_against_server(session)
+                try:
+                    boundary = check.run_against_server(session)
+                except Exception as exc:  # noqa: BLE001 - siehe Kommentar unten
+                    # Ein Check DARF laut Vertrag (BaseDynamicCheck) nie werfen --
+                    # tut er es trotzdem (z.B. RecursionError bei extrem
+                    # verschachtelter Server-Antwort), ist das der Sicherheitsnetz-
+                    # Punkt: NUR dieser eine Check wird INCONCLUSIVE, der Rest des
+                    # Scans läuft weiter (Prinzip III/V: nie werfen, nie stilles
+                    # "sicher", nie den gesamten Lauf mitreißen).
+                    boundary = BoundaryResult(
+                        target=session.target,
+                        check_id=check.check_id,
+                        probes=[AuthProbe(
+                            "run_against_server", CredentialCondition.NONE,
+                            BoundaryOutcome.INCONCLUSIVE,
+                            f"Check warf unerwartet {type(exc).__name__}: {exc}",
+                        )],
+                    )
                 boundary.check_id = check.check_id
                 result.boundary_results.append(boundary)
 

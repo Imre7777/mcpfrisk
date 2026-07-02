@@ -37,6 +37,49 @@ class TestJsTsCommandInjection:
         findings = _run(CommandInjectionCheck(), tmp_path, "cmd_injection_clean.ts")
         assert findings == []
 
+    def test_sh_dash_c_spawn_pattern_is_detected(self, tmp_path):
+        """Regressionstest: spawn("sh", ["-c", tainted]) wurde komplett übersehen
+        -- _assess() prüfte nur args[0] (die Konstante "sh"), nie das Array in
+        args[1], wo das eigentlich gefährliche Element steht."""
+        (tmp_path / "vuln.ts").write_text(
+            "import { spawn } from 'child_process';\n"
+            "export function run(cmd: string) {\n"
+            "  spawn('sh', ['-c', cmd]);\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        findings = [f for f in CommandInjectionCheck().run(tmp_path) if f.check_id == "CMD_INJECTION"]
+        assert len(findings) == 1
+        assert findings[0].severity.value == "critical"
+
+    def test_import_alias_does_not_bypass_detection(self, tmp_path):
+        """Regressionstest: 'import { exec as run } from "child_process"; run(...)'
+        wurde nicht erkannt, weil der Callee-Name nur der lokale Alias 'run' ist,
+        der nicht in JS_DANGEROUS_SEGMENTS steht."""
+        (tmp_path / "vuln.ts").write_text(
+            "import { exec as run } from 'child_process';\n"
+            "export function go(cmd: string) {\n"
+            "  run(`echo ${cmd}`);\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        findings = [f for f in CommandInjectionCheck().run(tmp_path) if f.check_id == "CMD_INJECTION"]
+        assert len(findings) >= 1
+
+    def test_computed_member_access_does_not_bypass_detection(self, tmp_path):
+        """Regressionstest: cp["exec"](...) (computed/bracket member access)
+        wurde nicht erkannt -- _member_name kannte nur identifier und
+        member_expression, nicht subscript_expression."""
+        (tmp_path / "vuln.ts").write_text(
+            "import * as cp from 'child_process';\n"
+            "export function go(cmd: string) {\n"
+            "  cp['exec'](`echo ${cmd}`);\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        findings = [f for f in CommandInjectionCheck().run(tmp_path) if f.check_id == "CMD_INJECTION"]
+        assert len(findings) >= 1
+
 
 class TestJsTsPathTraversal:
     def test_detects_unsandboxed_readfile(self, tmp_path):
