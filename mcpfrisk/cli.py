@@ -13,9 +13,10 @@ import os
 import sys
 from pathlib import Path
 
+from mcpfrisk.core.baseline import load_baseline, split_new_vs_known, write_baseline
 from mcpfrisk.core.dynamic_runner import DynamicRunner, IdentityConfig
 from mcpfrisk.core.fs import iter_source_files
-from mcpfrisk.core.models import Severity
+from mcpfrisk.core.models import DynamicScanResult, Finding, ScanResult, Severity
 from mcpfrisk.core.report import (
     print_dynamic_report,
     print_terminal_report,
@@ -23,6 +24,7 @@ from mcpfrisk.core.report import (
     write_json_report,
 )
 from mcpfrisk.core.runner import run_static_scan
+from mcpfrisk.core.sarif import write_sarif_report
 from mcpfrisk.core.sourcetree import jsts_available
 
 _JSTS_SUFFIXES = {".js", ".mjs", ".cjs", ".jsx", ".ts", ".mts", ".cts", ".tsx"}
@@ -50,6 +52,21 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument(
         "--skip", type=str, nargs="*", default=[],
         help="Check-IDs, die übersprungen werden sollen, z.B. --skip TOOL_POISONING",
+    )
+    scan_parser.add_argument(
+        "--baseline", type=Path, default=None, metavar="PATH",
+        help="Vergleicht Findings gegen eine gespeicherte Baseline-Datei -- nur "
+             "NEUE Findings zählen für --fail-on. Fehlt die Datei, gilt das als "
+             "leere Baseline (kein Fehler).",
+    )
+    scan_parser.add_argument(
+        "--write-baseline", type=Path, default=None, metavar="PATH",
+        help="Schreibt die aktuellen Findings als neue Baseline-Datei (z.B. "
+             "nach Review, um den Stand als 'akzeptiert' festzuschreiben).",
+    )
+    scan_parser.add_argument(
+        "--sarif", type=Path, default=None, metavar="PATH",
+        help="Schreibt zusätzlich einen SARIF-2.1.0-Report (GitHub Code Scanning).",
     )
 
     probe_parser = subparsers.add_parser(
@@ -101,6 +118,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="stdio: Name der Env-Variable, die je Identitäts-Prozess auf das "
              "Credential gesetzt wird (Default: MCP_AUTH_TOKEN).",
     )
+    probe_parser.add_argument(
+        "--baseline", type=Path, default=None, metavar="PATH",
+        help="Vergleicht Findings gegen eine gespeicherte Baseline-Datei -- nur "
+             "NEUE Findings zählen für --fail-on. Fehlt die Datei, gilt das als "
+             "leere Baseline (kein Fehler).",
+    )
+    probe_parser.add_argument(
+        "--write-baseline", type=Path, default=None, metavar="PATH",
+        help="Schreibt die aktuellen Findings als neue Baseline-Datei.",
+    )
 
     return parser
 
@@ -136,6 +163,34 @@ def main(argv: list[str] | None = None) -> int:
     return 1
 
 
+def _apply_baseline(
+    findings: list[Finding],
+    target_path: Path | None,
+    baseline_path: Path | None,
+    write_baseline_path: Path | None,
+) -> list[Finding]:
+    """Wendet --baseline/--write-baseline an. Gibt die Findings zurück, die
+    gegen --fail-on zählen sollen (mit --baseline: nur die neuen, sonst alle
+    unverändert). Bekannte Findings bleiben im bereits gedruckten Report
+    sichtbar (Prinzip III: nie kommentarlos verschwinden) -- diese Funktion
+    entscheidet nur, was BLOCKIEREN darf, nie was angezeigt wird."""
+    blocking = findings
+    if baseline_path is not None:
+        baseline = load_baseline(baseline_path)
+        new, known = split_new_vs_known(findings, baseline, target_path)
+        blocking = new
+        if known:
+            print(
+                f"ℹ {len(known)} bekannte(s) Finding(s) aus der Baseline "
+                f"({baseline_path}) zählen nicht für --fail-on, bleiben aber "
+                "oben im Report sichtbar."
+            )
+    if write_baseline_path is not None:
+        write_baseline(write_baseline_path, findings, target_path)
+        print(f"Baseline geschrieben nach: {write_baseline_path} ({len(findings)} Finding(s)).")
+    return blocking
+
+
 def _run_scan(args: argparse.Namespace) -> int:
     target_path: Path = args.path.resolve()
     if not target_path.exists():
@@ -150,8 +205,16 @@ def _run_scan(args: argparse.Namespace) -> int:
         write_json_report(result, args.json)
         print(f"JSON-Report geschrieben nach: {args.json}")
 
+    if args.sarif:
+        write_sarif_report(result, args.sarif)
+        print(f"SARIF-Report geschrieben nach: {args.sarif}")
+
+    blocking_findings = _apply_baseline(
+        result.findings, target_path, args.baseline, args.write_baseline
+    )
+
     fail_on = Severity(args.fail_on)
-    if result.has_blocking_findings(fail_on=fail_on):
+    if ScanResult(target_path=target_path, findings=blocking_findings).has_blocking_findings(fail_on=fail_on):
         print(f"\n❌ Build markiert als FAILED (Findings >= {fail_on.value.upper()} gefunden).")
         return 1
 
@@ -224,8 +287,10 @@ def _run_probe(args: argparse.Namespace) -> int:
         write_dynamic_json_report(result, args.json)
         print(f"JSON-Report geschrieben nach: {args.json}")
 
+    blocking_findings = _apply_baseline(result.findings, None, args.baseline, args.write_baseline)
+
     fail_on = Severity(args.fail_on)
-    if result.has_blocking_findings(fail_on=fail_on):
+    if DynamicScanResult(target=target, findings=blocking_findings).has_blocking_findings(fail_on=fail_on):
         print(f"\n❌ Build markiert als FAILED (Findings >= {fail_on.value.upper()} gefunden).")
         return 1
 

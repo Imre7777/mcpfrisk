@@ -82,7 +82,10 @@ def test_scan_prints_jsts_hint_once_when_extra_missing(tmp_path, monkeypatch, ca
     (tmp_path / "vuln.ts").write_text(
         (JSTS / "cmd_injection_vuln.ts").read_text(encoding="utf-8"), encoding="utf-8"
     )
-    args = argparse.Namespace(path=tmp_path, json=None, fail_on="high", skip=[])
+    args = argparse.Namespace(
+        path=tmp_path, json=None, fail_on="high", skip=[],
+        baseline=None, write_baseline=None, sarif=None,
+    )
     _run_scan(args)
     err = capsys.readouterr().err
     assert "jsts" in err.lower()

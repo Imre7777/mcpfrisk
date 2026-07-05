@@ -72,3 +72,43 @@ jobs:
       - name: Dogfood -- scanning a TS file must not crash without jsts
         run: |
           mcpfrisk scan tests/fixtures/jsts/cmd_injection_vuln.ts --fail-on critical || true
+
+  # Self-test der wiederverwendbaren GitHub Action (action.yml) im eigenen
+  # Repo: `uses: ./` referenziert die lokale Action statt eines veröffentlichten
+  # Tags. Prüft, dass die Action selbst (Install aus github.action_path, SARIF-
+  # Upload, Exit-Code-Weitergabe) tatsächlich funktioniert -- nicht nur die
+  # rohe CLI wie in den Jobs oben.
+  test-action:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write  # für den SARIF-Upload nach GitHub Code Scanning
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare an isolated clean-fixture directory
+        run: |
+          mkdir -p /tmp/action-clean-only
+          cp tests/fixtures/clean_server.py /tmp/action-clean-only/
+
+      - name: Action against the clean fixture (expected to pass)
+        uses: ./
+        with:
+          path: /tmp/action-clean-only
+          fail-on: high
+
+      - name: Action against the vulnerable fixture (expected to fail)
+        id: vuln_scan
+        continue-on-error: true
+        uses: ./
+        with:
+          path: tests/fixtures/vulnerable_server.py
+          fail-on: critical
+
+      - name: Verify the action actually gated the vulnerable fixture
+        run: |
+          if [ "${{ steps.vuln_scan.outcome }}" != "failure" ]; then
+            echo "Expected the action to fail on the vulnerable fixture, but it didn't." >&2
+            exit 1
+          fi
+          echo "OK: action correctly failed on the vulnerable fixture."

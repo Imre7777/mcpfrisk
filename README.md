@@ -38,6 +38,9 @@ It runs **before** release — unlike tools such as `mcp-scan`, which inspect
 - [Quickstart](#quickstart)
 - [JavaScript/TypeScript support](#javascripttypescript-support-optional-extra)
 - [Usage](#usage)
+- [Baseline / diff scanning](#baseline--diff-scanning)
+- [SARIF output](#sarif-output)
+- [GitHub Action](#github-action)
 - [Checks (Tier 1, static)](#currently-implemented-checks-tier-1-static)
 - [Tier 2 (dynamic)](#tier-2-dynamic-needs-a-running-server)
 - [Roadmap (Tier 3)](#roadmap-tier-3-supply-chain--spec-compliance)
@@ -95,10 +98,60 @@ mcpfrisk scan ./my-mcp-server --fail-on critical
 
 # Disable individual checks
 mcpfrisk scan ./my-mcp-server --skip TOOL_POISONING
+
+# SARIF report for the GitHub Security tab (Code Scanning)
+mcpfrisk scan ./my-mcp-server --sarif results.sarif
+
+# Baseline / diff scanning: only NEW findings block the build
+mcpfrisk scan ./my-mcp-server --write-baseline baseline.json   # accept the current state
+mcpfrisk scan ./my-mcp-server --baseline baseline.json          # only new findings fail
 ```
 
 Exit code `0` = passed, `1` = findings above the `--fail-on` threshold were
 found. Usable directly as a GitHub Action / CI gate.
+
+### Baseline / diff scanning
+
+For repos with existing code, re-reporting every historical finding on every
+run makes a scanner unusable as a hard CI gate — teams can't triage a
+repo's entire backlog on every PR. `--write-baseline PATH` snapshots the
+current findings' fingerprints (stable across machines: check ID + path
+*relative to the scan target* + line + title — not the exact snippet text,
+so cosmetic formatting changes don't invalidate it). Check that file into the
+repo; subsequent `--baseline PATH` runs only let genuinely **new** findings
+block the build. Known findings never silently disappear — they still print
+in the report, just without failing the build. A missing or corrupt baseline
+file is treated as empty (no error). Works for both `scan` and `probe`
+(`Finding` is the shared type across Tier 1 and Tier 2).
+
+### SARIF output
+
+`--sarif PATH` (scan only — SARIF/GitHub Code Scanning is built around file
++ line in a repo, which Tier-2 dynamic findings don't have) writes a
+SARIF 2.1.0 report: one `result` per finding, severity mapped to SARIF's
+`level` (CRITICAL/HIGH → `error`, MEDIUM → `warning`, LOW/INFO → `note`),
+uploadable via `github/codeql-action/upload-sarif@v3` for inline annotations
+in the GitHub Security tab.
+
+### GitHub Action
+
+A reusable composite action ([`action.yml`](./action.yml)) wraps the above —
+installs McpFrisk (from the action's own checkout, no PyPI release required
+yet), scans, uploads SARIF, and fails the job on blocking findings:
+
+```yaml
+- uses: Imre7777/mcpfrisk@main
+  with:
+    path: .
+    fail-on: high
+    baseline: baseline.json   # optional
+    skip: ''                  # optional, space-separated check IDs
+```
+
+The SARIF upload runs even if the scan step fails the build, so a failing
+scan never leaves the Security tab empty. See [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)
+(`test-action` job) for the action dogfooding itself against this repo's own
+fixtures.
 
 ## Currently implemented checks (Tier 1, static)
 
@@ -298,11 +351,15 @@ mcpfrisk/
 │   ├── dynamic_runner.py  # Tier-2 orchestration + transport port (HTTP adapter, identities)
 │   ├── stdio_transport.py # stdio adapter: subprocess + newline JSON-RPC (per-identity channels)
 │   ├── sourcetree/        # SourceModel port + Python / tree-sitter adapters
-│   └── report.py          # Terminal output + JSON export
+│   ├── report.py          # Terminal output + JSON export
+│   ├── baseline.py        # Fingerprint + baseline load/write/diff (scan + probe)
+│   └── sarif.py           # SARIF 2.1.0 export (scan only)
 ├── checks/
 │   ├── registry.py        # STATIC_CHECKS + DYNAMIC_CHECKS  ← new checks here
 │   └── *.py               # one check per file (testable in isolation)
 └── cli.py                 # argparse entry point (scan + probe)
+
+action.yml                 # reusable composite GitHub Action (see below)
 ```
 
 A new check is a new file in `checks/` plus an entry in `checks/registry.py` —

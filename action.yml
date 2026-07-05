@@ -1,0 +1,93 @@
+name: 'McpFrisk Security Scan'
+description: >-
+  Pre-deploy security scan for MCP server source code (static Tier-1 checks:
+  command injection, path traversal, hardcoded secrets, tool poisoning) with
+  SARIF upload to the GitHub Security tab.
+author: 'Imre Obermueller'
+branding:
+  icon: 'shield'
+  color: 'red'
+
+inputs:
+  path:
+    description: 'Path to the MCP server source code to scan.'
+    required: false
+    default: '.'
+  fail-on:
+    description: 'Minimum severity that fails the build (critical|high|medium|low|info).'
+    required: false
+    default: 'high'
+  skip:
+    description: 'Space-separated check IDs to skip, e.g. "TOOL_POISONING HARDCODED_SECRETS".'
+    required: false
+    default: ''
+  baseline:
+    description: >-
+      Path to a baseline JSON file (checked into the repo). Only findings NOT
+      already in the baseline fail the build.
+    required: false
+    default: ''
+  jsts:
+    description: 'Install the optional jsts extra for full AST-based JS/TS analysis.'
+    required: false
+    default: 'true'
+  python-version:
+    description: 'Python version to run McpFrisk with.'
+    required: false
+    default: '3.12'
+
+outputs:
+  sarif-path:
+    description: 'Path to the generated SARIF report.'
+    value: ${{ steps.scan.outputs.sarif-path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install McpFrisk
+      shell: bash
+      # Installs from the action's OWN checkout (not PyPI -- McpFrisk isn't
+      # published there yet). ${{ github.action_path }} is populated by
+      # GitHub for any composite action referenced via `uses:`, regardless of
+      # whether the calling workflow separately checks this repo out.
+      run: |
+        if [ "${{ inputs.jsts }}" = "true" ]; then
+          pip install "${{ github.action_path }}[jsts]"
+        else
+          pip install "${{ github.action_path }}"
+        fi
+
+    - name: Run McpFrisk scan
+      id: scan
+      shell: bash
+      continue-on-error: true
+      run: |
+        args=(scan "${{ inputs.path }}" --fail-on "${{ inputs.fail-on }}" --sarif mcpfrisk-results.sarif)
+        if [ -n "${{ inputs.baseline }}" ]; then
+          args+=(--baseline "${{ inputs.baseline }}")
+        fi
+        if [ -n "${{ inputs.skip }}" ]; then
+          args+=(--skip ${{ inputs.skip }})
+        fi
+        mcpfrisk "${args[@]}"
+        echo "sarif-path=mcpfrisk-results.sarif" >> "$GITHUB_OUTPUT"
+
+    - name: Upload SARIF to GitHub Code Scanning
+      # Runs even if the scan step above failed the build -- a failing scan
+      # must not leave the Security tab empty.
+      if: always()
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: mcpfrisk-results.sarif
+
+    - name: Fail the job if McpFrisk found blocking findings
+      shell: bash
+      if: steps.scan.outcome == 'failure'
+      run: |
+        echo "McpFrisk found findings at or above '${{ inputs.fail-on }}'." >&2
+        exit 1

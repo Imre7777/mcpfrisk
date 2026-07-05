@@ -424,9 +424,17 @@ Priorisiert nach Recherche-Relevanz:
   Finding wird unterdrückt, keine Pfade ausgeschlossen (Prinzip III + die
   "never exclude paths containing test"-Lesson). Validiert gegen
   `modelcontextprotocol/{servers,python-sdk}` und `egoist/fetch-mcp`.
-- GitHub Action als eigenständiges, wiederverwendbares Composite-Action
-  veröffentlichen (`uses: <user>/mcpfrisk-action@v1`), nicht nur der
-  rohe CI-Workflow in diesem Repo.
+- ~~GitHub Action als eigenständiges, wiederverwendbares Composite-Action
+  veröffentlichen~~ **ERLEDIGT** (Feature `010-ci-integration`):
+  [`action.yml`](./action.yml) installiert McpFrisk aus dem eigenen
+  Action-Checkout (`${{ github.action_path }}`, kein PyPI-Release nötig),
+  scannt, lädt SARIF hoch (auch bei fehlgeschlagenem Scan) und gibt den
+  Build-Status korrekt weiter. Selbsttest gegen die eigenen Fixtures im
+  `test-action`-Job in `.github/workflows/ci.yml`. Gleichzeitig mit
+  Baseline-/Diff-Scanning (`--baseline`/`--write-baseline`, für `scan`
+  UND `probe`) und SARIF-Output (`--sarif`, nur `scan`) umgesetzt — beides
+  schloss laut MARKET-RESEARCH.md §7 den größten verbleibenden CI/UX-Hebel
+  gegen `agent-audit`, bevor neue Checks oder Tier 3 drankommen.
 - Erwägen: optionaler LLM-Judge-Call für `TOOL_POISONING` als
   Ergänzung zur Pattern-Heuristik (höhere Erkennungsrate bei
   raffinierteren Umschreibungen, die simple Regexe umgehen — Trade-off:
