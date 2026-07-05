@@ -436,6 +436,18 @@ Priorisiert nach Recherche-Relevanz:
   UND `probe`) und SARIF-Output (`--sarif`, nur `scan`) umgesetzt — beides
   schloss laut MARKET-RESEARCH.md §7 den größten verbleibenden CI/UX-Hebel
   gegen `agent-audit`, bevor neue Checks oder Tier 3 drankommen.
+- ~~Cross-Function-Taint-Tracking (kontert `agent-audit`s selbst
+  eingeräumte Intra-Procedural-Schwäche)~~ **ERLEDIGT** (Feature
+  `012-cross-function-taint`): `PATH_TRAVERSAL` verfolgt Taint jetzt EINE
+  Funktionsgrenze weit -- ein pfad-artiger Parameter, der (positional oder
+  per Keyword) an einen im selben Modul definierten Helfer weitergereicht
+  wird, der ihn ungeprüft öffnet, wird erkannt (der häufige Thin-Wrapper-
+  Fall). Bewusste Grenzen: eine Ebene (kein `F→G→H`), nur Same-Module
+  (keine Cross-File-/Import-Auflösung), nur benannte Helfer. **Empirisch
+  belegt, dass die Lücke NUR `PATH_TRAVERSAL` betrifft** -- `CMD_INJECTION`
+  hat sein Gefahrensignal (`shell=True`/Interpolation) immer am Sink selbst
+  und flaggt den Helfer direkt, daher bewusst nicht verändert. Rein
+  Check-Level (nur `path_traversal.py`), kein neues Port-Primitiv.
 - Erwägen: optionaler LLM-Judge-Call für `TOOL_POISONING` als
   Ergänzung zur Pattern-Heuristik (höhere Erkennungsrate bei
   raffinierteren Umschreibungen, die simple Regexe umgehen — Trade-off:

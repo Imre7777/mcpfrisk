@@ -326,12 +326,17 @@ what's next.
   through arbitrarily complex code. Taint tracking follows intermediate
   assignments (including through nested `if`/`for`/`try` blocks) within a
   single function, and resolves import aliases (`import x as y`,
-  `from x import y`) when matching dangerous calls — but it is
-  **intra-procedural**: a data flow that crosses a function or module
-  boundary is not followed. If a server validates in a *separate* function
-  (e.g. `validatePath()`), `PATH_TRAVERSAL` still reports it (principle:
-  prefer FP over FN) but attaches a **triage hint** pointing at the existing
-  validation function, so a likely false positive is quick to classify.
+  `from x import y`) when matching dangerous calls. `PATH_TRAVERSAL`
+  additionally follows taint **one function boundary deep**: a path-like
+  parameter passed to a same-module helper (positionally or by keyword) that
+  then opens it unvalidated is caught — the common thin-wrapper pattern that
+  a purely intra-procedural analysis (including `agent-audit`'s) misses. The
+  documented limits: only **one** hop (a two-level `F → G → H` chain is not
+  followed), only **same-module** helpers (no cross-file/import resolution),
+  and named helpers only (an arrow-function-const helper's name isn't
+  resolved). If a server validates in a *separate* function the check can't
+  see, `PATH_TRAVERSAL` still reports it (principle: prefer FP over FN) but
+  attaches a **triage hint** pointing at the existing validation function.
 - Severity follows the rubric: a constant argument list with a redundant
   `subprocess.run(..., shell=True)` is a best-practice violation (MEDIUM), not
   a direct RCE path (CRITICAL is reserved for the interpolated command).

@@ -23,7 +23,13 @@ from pathlib import Path
 from mcpfrisk.core.base_check import BaseCheck
 from mcpfrisk.core.fs import iter_source_files
 from mcpfrisk.core.models import Finding, Severity
-from mcpfrisk.core.sourcetree import FunctionDef, SourceLanguage, SourceModel, analyze
+from mcpfrisk.core.sourcetree import (
+    CallSite,
+    FunctionDef,
+    SourceLanguage,
+    SourceModel,
+    analyze,
+)
 
 PY_FILE_OPEN_CALLS = {"open", "os.open", "io.open"}
 # JS/TS: datei-öffnende Aufrufe per letztem Namenssegment (fs.readFileSync,
@@ -75,8 +81,20 @@ class PathTraversalCheck(BaseCheck):
             # nach Prinzip III) trotzdem. Statt zu unterdrücken, hängen wir einen
             # Hinweis an, damit der Reviewer einen wahrscheinlichen FP schnell einordnet.
             module_validators = self._module_validators(functions)
+
+            # Pass 1: intra-prozedural (unverändertes Verhalten).
+            intra: list[Finding] = []
             for func in functions:
-                findings.extend(self._scan_function(model, func, module_validators))
+                intra.extend(self._scan_function(model, func, module_validators))
+            findings.extend(intra)
+
+            # Pass 2: Cross-Function-Taint eine Ebene tief (Feature 012). Ein
+            # pfad-artiger Parameter, der an einen im selben Modul definierten
+            # Helper weitergereicht wird, dessen Körper ihn ungeprüft öffnet --
+            # der intra-Pass sieht das nicht (Quelle und Sink in verschiedenen
+            # Funktionen). Dedup gegen bereits (intra) gemeldete Sinks.
+            flagged_sinks = {(model.path, f.line_number) for f in intra}
+            findings.extend(self._scan_cross_function(model, functions, flagged_sinks))
         return findings
 
     def _module_validators(self, functions: list[FunctionDef]) -> list[str]:
@@ -96,22 +114,12 @@ class PathTraversalCheck(BaseCheck):
         func: FunctionDef,
         module_validators: list[str] | None = None,
     ) -> list[Finding]:
-        path_like = {
-            p for p in func.params
-            if any(kw in p.lower() for kw in PATH_PARAM_KEYWORDS)
-        }
+        path_like = self._path_like_params(func)
         if not path_like:
             return []
 
-        code_only = self._strip_comments(func.body_text)
-        has_validation = any(hint in code_only for hint in SAFE_VALIDATION_HINTS)
-
-        # Einfaches Taint-Tracking: Variablen, die (transitiv) aus einem
-        # pfad-artigen Parameter gebaut werden, gelten als tainted.
-        tainted = set(path_like)
-        for assign in func.body_assignments:
-            if assign.referenced_names & tainted:
-                tainted.add(assign.target_name)
+        has_validation = self._has_validation(func)
+        tainted = self._tainted_set(func, path_like)
 
         # Validierungsfunktionen im Modul, die NICHT diese Funktion selbst sind.
         external_validators = [
@@ -131,6 +139,90 @@ class PathTraversalCheck(BaseCheck):
                     )
                 )
         return findings
+
+    @staticmethod
+    def _path_like_params(func: FunctionDef) -> set[str]:
+        return {
+            p for p in func.params
+            if any(kw in p.lower() for kw in PATH_PARAM_KEYWORDS)
+        }
+
+    def _has_validation(self, func: FunctionDef) -> bool:
+        code_only = self._strip_comments(func.body_text)
+        return any(hint in code_only for hint in SAFE_VALIDATION_HINTS)
+
+    @staticmethod
+    def _tainted_set(func: FunctionDef, seed: set[str]) -> set[str]:
+        """Menge der Namen, die (transitiv, ein Vorwärts-Pass in Quelltext-
+        Reihenfolge) aus `seed` gebaut werden. `seed` sind die anfänglich
+        getainteten Parameter -- intra: die pfad-artigen; cross: die per Helfer-
+        Aufruf propagierten."""
+        tainted = set(seed)
+        for assign in func.body_assignments:
+            if assign.referenced_names & tainted:
+                tainted.add(assign.target_name)
+        return tainted
+
+    # -- Cross-Function-Taint (Feature 012) --------------------------------
+    def _scan_cross_function(
+        self,
+        model: SourceModel,
+        functions: list[FunctionDef],
+        flagged_sinks: set,
+    ) -> list[Finding]:
+        """Verfolgt Taint EINE Funktionsgrenze weit: ein pfad-artiger Parameter
+        einer Funktion F, der (positional oder per Keyword) an einen im selben
+        Modul definierten Helfer H weitergereicht wird, dessen Körper ihn
+        ungeprüft an einen Datei-Sink gibt. Keine Transitivität (F→H→G) in v1."""
+        func_map: dict[str, FunctionDef] = {}
+        for f in functions:
+            if f.name:
+                func_map[f.name] = f  # bei Namensgleichheit gewinnt die letzte Definition
+
+        findings: list[Finding] = []
+        for entry in functions:
+            path_like = self._path_like_params(entry)
+            if not path_like:
+                continue  # nur von einer echten Quelle (pfad-artiger Param) aus
+            entry_tainted = self._tainted_set(entry, path_like)
+            for call in entry.body_calls:
+                helper = func_map.get(call.callee)
+                if helper is None or helper is entry:
+                    continue
+                seed = self._bind_tainted_params(call, helper, entry_tainted)
+                if not seed:
+                    continue
+                if self._has_validation(helper):
+                    continue  # Helfer validiert selbst -> kein FP
+                helper_tainted = self._tainted_set(helper, seed)
+                for sink in helper.body_calls:
+                    if not self._is_file_open(model.language, sink.callee):
+                        continue
+                    if not any(arg.referenced_names & helper_tainted for arg in sink.args):
+                        continue
+                    key = (model.path, sink.line)
+                    if key in flagged_sinks:
+                        continue  # intra hat diesen Sink schon gemeldet
+                    flagged_sinks.add(key)
+                    findings.append(
+                        self._make_cross_finding(model, sink, entry, helper, seed)
+                    )
+        return findings
+
+    @staticmethod
+    def _bind_tainted_params(
+        call: CallSite, helper: FunctionDef, caller_tainted: set[str]
+    ) -> set[str]:
+        """Bindet getaintete Aufruf-Argumente an die Parameter-Namen des Helfers
+        (positional per Position, keyword per Name)."""
+        seed: set[str] = set()
+        for i, arg in enumerate(call.args):
+            if arg.referenced_names & caller_tainted and i < len(helper.params):
+                seed.add(helper.params[i])
+        for kw_name, arg in call.keywords.items():
+            if arg.referenced_names & caller_tainted and kw_name in helper.params:
+                seed.add(kw_name)
+        return seed
 
     @staticmethod
     def _is_file_open(language: SourceLanguage, callee: str) -> bool:
@@ -199,6 +291,57 @@ class PathTraversalCheck(BaseCheck):
             file_path=model.path,
             line_number=lineno,
             snippet=snippet,
+            owasp_mcp_ref="MCP05",
+            cwe_ref="CWE-22",
+            remediation=remediation,
+            references=[
+                "https://cwe.mitre.org/data/definitions/22.html",
+                "https://owasp.org/www-project-mcp-top-10/",
+            ],
+        )
+
+    def _make_cross_finding(
+        self,
+        model: SourceModel,
+        sink: CallSite,
+        entry: FunctionDef,
+        helper: FunctionDef,
+        seed: set[str],
+    ) -> Finding:
+        is_python = model.language is SourceLanguage.PYTHON
+        remediation = (
+            "Normalisiere den Pfad mit Path(base_dir).joinpath(user_path)."
+            "resolve() und prüfe mit .is_relative_to(base_dir) -- am besten im "
+            "Helfer, der die Datei tatsächlich öffnet. Lehne '..' und absolute "
+            "Pfade explizit ab."
+            if is_python
+            else
+            "Löse den Pfad mit path.resolve(base, userPath) auf und prüfe mit "
+            "result.startsWith(base) -- am besten im Helfer, der die Datei "
+            "tatsächlich öffnet. Lehne '..' und absolute Pfade explizit ab."
+        )
+        seed_list = ", ".join(sorted(seed))
+        entry_params = ", ".join(sorted(self._path_like_params(entry)))
+        description = (
+            f"Der dateipfad-artige Parameter ({entry_params}) der Funktion "
+            f"'{entry.name}' wird an den Helfer '{helper.name}' weitergereicht "
+            f"(Parameter {seed_list}) und dort ohne erkennbare Validierung an eine "
+            "Datei-öffnende Funktion gegeben. Der Fluss läuft über eine "
+            "Funktionsgrenze -- die intra-prozedurale Prüfung allein würde ihn "
+            "übersehen. (Cross-Function-Taint, eine Ebene tief; tiefere Ketten "
+            "oder Helfer aus anderen Modulen deckt diese Version nicht ab.)"
+        )
+        return Finding(
+            check_id=self.check_id,
+            severity=Severity.HIGH,
+            title=(
+                f"Mögliche Path Traversal über Helfer '{helper.name}' "
+                f"(aus '{entry.name}')"
+            ),
+            description=description,
+            file_path=model.path,
+            line_number=sink.line,
+            snippet=sink.snippet,
             owasp_mcp_ref="MCP05",
             cwe_ref="CWE-22",
             remediation=remediation,
