@@ -75,14 +75,22 @@ jobs:
 
   # Self-test der wiederverwendbaren GitHub Action (action.yml) im eigenen
   # Repo: `uses: ./` referenziert die lokale Action statt eines veröffentlichten
-  # Tags. Prüft, dass die Action selbst (Install aus github.action_path, SARIF-
-  # Upload, Exit-Code-Weitergabe) tatsächlich funktioniert -- nicht nur die
-  # rohe CLI wie in den Jobs oben.
+  # Tags. Prüft, dass die Action selbst (Install aus github.action_path, Scan,
+  # SARIF-Erzeugung, Exit-Code-Weitergabe) tatsächlich funktioniert -- nicht nur
+  # die rohe CLI wie in den Jobs oben.
+  #
+  # Der SARIF-UPLOAD wird hier bewusst abgeschaltet (`upload-sarif: false`):
+  #   (1) dieses Repo ist privat ohne GitHub Advanced Security -- der Code-
+  #       Scanning-Upload wäre gar nicht zugänglich ("Resource not accessible
+  #       by integration"), und
+  #   (2) selbst mit GHAS würde der Selbsttest sonst FIXTURE-Schwachstellen in
+  #       den echten Security-Tab schreiben (Verschmutzung mit Testdaten).
+  # Der Upload selbst ist GitHubs codeql-action, nicht unser Code -- wir testen
+  # unsere Action (Install/Scan/Gate), nicht GitHubs Upload.
   test-action:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write  # für den SARIF-Upload nach GitHub Code Scanning
     steps:
       - uses: actions/checkout@v4
 
@@ -96,6 +104,7 @@ jobs:
         with:
           path: /tmp/action-clean-only
           fail-on: high
+          upload-sarif: false
 
       - name: Action against the vulnerable fixture (expected to fail)
         id: vuln_scan
@@ -104,6 +113,7 @@ jobs:
         with:
           path: tests/fixtures/vulnerable_server.py
           fail-on: critical
+          upload-sarif: false
 
       - name: Verify the action actually gated the vulnerable fixture
         run: |

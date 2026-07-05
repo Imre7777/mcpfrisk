@@ -2,7 +2,7 @@ name: 'McpFrisk Security Scan'
 description: >-
   Pre-deploy security scan for MCP server source code (static Tier-1 checks:
   command injection, path traversal, hardcoded secrets, tool poisoning) with
-  SARIF upload to the GitHub Security tab.
+  optional SARIF upload to the GitHub Security tab.
 author: 'Imre Obermueller'
 branding:
   icon: 'shield'
@@ -29,6 +29,16 @@ inputs:
     default: ''
   jsts:
     description: 'Install the optional jsts extra for full AST-based JS/TS analysis.'
+    required: false
+    default: 'true'
+  upload-sarif:
+    description: >-
+      Upload the SARIF report to GitHub Code Scanning. Requires the calling
+      workflow to grant `security-events: write` (and, on PRIVATE repos, GitHub
+      Advanced Security to be enabled -- without it the upload API returns
+      "Resource not accessible by integration"). Set to 'false' to skip the
+      upload (the SARIF file is still produced and exposed via the `sarif-path`
+      output for the caller to handle).
     required: false
     default: 'true'
   python-version:
@@ -79,8 +89,10 @@ runs:
 
     - name: Upload SARIF to GitHub Code Scanning
       # Runs even if the scan step above failed the build -- a failing scan
-      # must not leave the Security tab empty.
-      if: always()
+      # must not leave the Security tab empty. Skippable via `upload-sarif:
+      # false` for private repos without GitHub Advanced Security (where the
+      # upload API is not accessible) or callers who handle SARIF themselves.
+      if: ${{ always() && inputs.upload-sarif == 'true' }}
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: mcpfrisk-results.sarif

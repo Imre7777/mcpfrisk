@@ -146,12 +146,22 @@ yet), scans, uploads SARIF, and fails the job on blocking findings:
     fail-on: high
     baseline: baseline.json   # optional
     skip: ''                  # optional, space-separated check IDs
+    upload-sarif: true        # optional (default true)
 ```
 
 The SARIF upload runs even if the scan step fails the build, so a failing
-scan never leaves the Security tab empty. See [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)
-(`test-action` job) for the action dogfooding itself against this repo's own
-fixtures.
+scan never leaves the Security tab empty. Grant the job
+`permissions: { security-events: write }` for the upload to work.
+
+> **Private repos:** SARIF upload to Code Scanning requires **GitHub Advanced
+> Security** to be enabled. Without it the upload API returns *"Resource not
+> accessible by integration"*. Set `upload-sarif: false` — the scan still runs
+> and gates the build, and the SARIF file is still produced (exposed via the
+> action's `sarif-path` output) for you to archive or handle yourself.
+
+See [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) (`test-action`
+job) for the action dogfooding itself against this repo's own fixtures (with
+`upload-sarif: false`, since this repo is private without GHAS).
 
 ## Currently implemented checks (Tier 1, static)
 
