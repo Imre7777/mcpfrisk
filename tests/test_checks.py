@@ -333,13 +333,14 @@ class TestFullScanIntegration:
         result = _scan_single_file(tmp_path, CLEAN_SERVER)
         assert result.findings == []
 
-    def test_all_four_checks_actually_run(self, tmp_path):
+    def test_all_static_checks_actually_run(self, tmp_path):
         result = _scan_single_file(tmp_path, VULNERABLE_SERVER)
         assert set(result.checks_run) == {
             "CMD_INJECTION",
             "PATH_TRAVERSAL",
             "HARDCODED_SECRETS",
             "TOOL_POISONING",
+            "TOOL_NAME_COLLISION",
         }
 
     def test_skip_checks_parameter_works(self, tmp_path):

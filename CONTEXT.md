@@ -48,7 +48,7 @@ laufende Server macht). `mcpfrisk` war zum Zeitpunkt der Recherche frei.
 
 ## 2. Aktueller Stand (was funktioniert bereits)
 
-4 statische Checks sind implementiert, getestet und funktionieren:
+5 statische Checks sind implementiert, getestet und funktionieren:
 
 | Check ID | Datei | Was wird erkannt | OWASP MCP Top 10 | CWE |
 |---|---|---|---|---|
@@ -56,8 +56,9 @@ laufende Server macht). `mcpfrisk` war zum Zeitpunkt der Recherche frei.
 | `PATH_TRAVERSAL` | `checks/path_traversal.py` | Dateipfad-Konstruktion aus Tool-Parametern ohne Sandboxing/Normalisierung | MCP05 | CWE-22 |
 | `HARDCODED_SECRETS` | `checks/hardcoded_secrets.py` | API-Keys/Tokens im Quellcode (bekannte Formate + Entropie-Heuristik) | MCP01 | CWE-798 |
 | `TOOL_POISONING` | `checks/tool_poisoning.py` | Versteckte Instruktionen in Tool-Docstrings (das MCP-spezifischste Risiko) | MCP04 | CWE-94 |
+| `TOOL_NAME_COLLISION` | `checks/tool_name_collision.py` | Doppelte (MEDIUM) / verwechselbar ähnliche (LOW) Tool-Namen im selben Server -- Shadowing-Risiko; nur intra-repo (Cross-Server out of scope). Feature `011-tool-name-collision` | MCP03 | CWE-706 |
 
-Alle vier sind in `mcpfrisk/checks/registry.py` registriert.
+Alle fünf sind in `mcpfrisk/checks/registry.py` registriert.
 
 **Test-Status:** 17 pytest-Tests in `tests/test_checks.py`, alle grün.
 Jeder Check hat mindestens einen True-Positive-Test (gegen

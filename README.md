@@ -171,6 +171,15 @@ job) for the action dogfooding itself against this repo's own fixtures (with
 | `PATH_TRAVERSAL` | File path construction without sandboxing | MCP05 | ~82% of implementations vulnerable |
 | `HARDCODED_SECRETS` | API keys/tokens in source code | MCP01 | — |
 | `TOOL_POISONING` | Hidden instructions in tool descriptions | MCP04 | 84% success rate under auto-approval |
+| `TOOL_NAME_COLLISION` | Duplicate / confusingly-similar tool names (shadowing risk) | MCP03 | — |
+
+`TOOL_NAME_COLLISION` flags two tool registrations sharing an **exact** name
+(undefined which one the client resolves — one silently shadows the other →
+MEDIUM) or **near-duplicate** names (case/separator/one-char/plural apart →
+LOW, an agent-confusion risk). Both cite *both* source locations. Scope is
+honest: McpFrisk scans one server, so it catches *intra-repo* collisions —
+cross-server shadowing (a different malicious server registering a colliding
+name) is out of scope. CWE-706. A check no generic SAST tool performs.
 
 Each check is a self-contained class under `mcpfrisk/checks/`, registered in
 `checks/registry.py`. Adding a new check means: a new file plus one entry in
