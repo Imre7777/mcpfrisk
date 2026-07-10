@@ -16,6 +16,7 @@ from mcpfrisk.checks.rate_limiting import RateLimitingCheck
 from mcpfrisk.checks.rbac_cross_tenant import RbacCrossTenantCheck
 from mcpfrisk.checks.schema_fuzzing import SchemaFuzzingCheck
 from mcpfrisk.checks.ssrf_check import SsrfCheck
+from mcpfrisk.checks.tool_description_drift import ToolDescriptionDriftCheck
 from mcpfrisk.checks.tool_name_collision import ToolNameCollisionCheck
 from mcpfrisk.checks.tool_poisoning import ToolDescriptionPoisoningCheck
 from mcpfrisk.core.base_check import BaseCheck, BaseDynamicCheck
@@ -28,6 +29,7 @@ STATIC_CHECKS: list[type[BaseCheck]] = [
     ToolDescriptionPoisoningCheck,
     ToolNameCollisionCheck,
     McpConfigAuditCheck,
+    ToolDescriptionDriftCheck,
 ]
 
 # Tier-2-Checks (dynamisch, brauchen laufenden Server), ausgeführt via

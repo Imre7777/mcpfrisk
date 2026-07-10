@@ -58,8 +58,12 @@ laufende Server macht). `mcpfrisk` war zum Zeitpunkt der Recherche frei.
 | `TOOL_POISONING` | `checks/tool_poisoning.py` | Versteckte Instruktionen in Tool-Docstrings (das MCP-spezifischste Risiko) | MCP04 | CWE-94 |
 | `TOOL_NAME_COLLISION` | `checks/tool_name_collision.py` | Doppelte (MEDIUM) / verwechselbar ähnliche (LOW) Tool-Namen im selben Server -- Shadowing-Risiko; nur intra-repo (Cross-Server out of scope). Feature `011-tool-name-collision` | MCP03 | CWE-706 |
 | `MCP_CONFIG_AUDIT` | `checks/mcp_config_audit.py` | MCP-CONFIG-Dateien (mcp.json/claude_desktop_config.json/…) statt Quellcode: Klartext-Secrets (HIGH), injection/ungepinnte Starts (HIGH/MEDIUM), Auto-Approve-Flags (MEDIUM), remote ohne Auth (LOW). Feature `014-mcp-config-audit` | MCP01/04/05/07 | CWE-798/78/829/862/306 |
+| `TOOL_DESCRIPTION_DRIFT` | `checks/tool_description_drift.py` | Rug-Pull: Tool-Beschreibung geändert (MEDIUM) / neues ungepinntes Tool (LOW) gegenüber gepinntem Baseline `.mcpfrisk-tools.json`. OPT-IN (`scan --write-tools-baseline`). Feature `015-tool-description-drift` | MCP04 | CWE-471 |
 
-Alle sechs sind in `mcpfrisk/checks/registry.py` registriert. **Besonderheit
+Alle sieben sind in `mcpfrisk/checks/registry.py` registriert. **`MCP_CONFIG_AUDIT`
+und `TOOL_DESCRIPTION_DRIFT` sind opt-in/kontextabhängig** (`applies_to`): der
+erste greift nur bei vorhandener MCP-Config, der zweite nur bei gepinntem
+`.mcpfrisk-tools.json` -- sonst „skipped" (kein Fehler, kein FP). **Besonderheit
 `MCP_CONFIG_AUDIT`:** der einzige Check mit einem anderen Scan-Zieltyp (JSON-
 Config statt Quellcode-AST) -- er greift nur, wenn eine MCP-Config im Ziel
 liegt (`applies_to`), sonst „skipped" (kein Fehler).
@@ -98,6 +102,7 @@ mcpfrisk/
 │   ├── tool_poisoning.py
 │   ├── tool_name_collision.py  # Tier 1: TOOL_NAME_COLLISION (Shadowing, Feature 011)
 │   ├── mcp_config_audit.py  # Tier 1: MCP_CONFIG_AUDIT (Config-Dateien, Feature 014)
+│   ├── tool_description_drift.py  # Tier 1: TOOL_DESCRIPTION_DRIFT (Rug-Pull, Feature 015)
 │   ├── auth_boundary.py    # Tier 2: AUTH_BOUNDARY
 │   ├── ssrf_check.py        # Tier 2: SSRF_CHECK (out-of-band Callback)
 │   ├── _ssrf_callback.py    # Loopback-Callback-Listener für SSRF_CHECK (geteilter Nicht-Check-Helfer)
@@ -107,7 +112,8 @@ mcpfrisk/
 │   ├── error_leakage.py     # Tier 2: ERROR_LEAKAGE
 │   └── rate_limiting.py     # Tier 2: RATE_LIMITING
 ├── core/
-│   ├── baseline.py         # Baseline-/Diff-Scanning (Fingerprint, Feature 010)
+│   ├── baseline.py         # Findings-Baseline-/Diff-Scanning (Fingerprint, Feature 010)
+│   ├── tool_baseline.py    # Tool-Beschreibungs-Baseline für Rug-Pull-Drift (Feature 015)
 │   └── sarif.py            # SARIF-2.1.0-Writer für GitHub Code Scanning (Feature 010)
 └── cli.py                 # argparse Entry Point (scan + probe), ruft runner/dynamic_runner + report
 ```

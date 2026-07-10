@@ -84,7 +84,7 @@ def test_scan_prints_jsts_hint_once_when_extra_missing(tmp_path, monkeypatch, ca
     )
     args = argparse.Namespace(
         path=tmp_path, json=None, fail_on="high", skip=[],
-        baseline=None, write_baseline=None, sarif=None,
+        baseline=None, write_baseline=None, sarif=None, write_tools_baseline=False,
     )
     _run_scan(args)
     err = capsys.readouterr().err

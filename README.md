@@ -173,6 +173,7 @@ job) for the action dogfooding itself against this repo's own fixtures (with
 | `TOOL_POISONING` | Hidden instructions in tool descriptions | MCP04 | 84% success rate under auto-approval |
 | `TOOL_NAME_COLLISION` | Duplicate / confusingly-similar tool names (shadowing risk) | MCP03 | — |
 | `MCP_CONFIG_AUDIT` | Risky MCP **config** files (secrets, injection/unpinned launch, auto-approve, no-auth) | MCP01/04/05/07 | 79% plaintext creds / 40% no auth |
+| `TOOL_DESCRIPTION_DRIFT` | Tool descriptions changed vs a pinned baseline (rug-pull / silent redefinition) | MCP04 | CVE-2025-54136 |
 
 `TOOL_NAME_COLLISION` flags two tool registrations sharing an **exact** name
 (undefined which one the client resolves — one silently shadows the other →
@@ -194,6 +195,26 @@ CWE-829 — rug-pull/supply-chain), over-broad auto-approve flags
 CVE-2026-21852 class), and a remote `url` server with no auth header (LOW,
 CWE-306). Env references (`${VAR}`), pinned packages, and `.example` templates
 stay finding-free. This closes the clearest coverage gap versus `agent-audit`.
+
+`TOOL_DESCRIPTION_DRIFT` defends against **rug-pull / silent redefinition**
+(CVE-2025-54136): a server whose tool descriptions have been reviewed/approved,
+then silently changed to smuggle in a poisoned instruction. MCP has no built-in
+pinning or change notification, so McpFrisk pins the reviewed descriptions as a
+committed baseline and flags any later drift in CI:
+
+```bash
+# Pin the current (reviewed) tool descriptions — commit the resulting file
+mcpfrisk scan ./my-mcp-server --write-tools-baseline   # writes .mcpfrisk-tools.json
+
+# From now on, every scan flags a tool whose description changed since the pin
+mcpfrisk scan ./my-mcp-server        # TOOL_DESCRIPTION_DRIFT → MEDIUM on drift
+```
+
+It's **opt-in** (no baseline → the check is skipped, no noise), whitespace-
+normalized (reformatting isn't drift), and **composes with `TOOL_POISONING`**:
+drift says *the description changed*, poisoning says *the new text is
+malicious*. A changed description is MEDIUM (CWE-471), a brand-new unpinned tool
+is LOW. Update the pin as part of review when a change is intentional.
 
 Each check is a self-contained class under `mcpfrisk/checks/`, registered in
 `checks/registry.py`. Adding a new check means: a new file plus one entry in

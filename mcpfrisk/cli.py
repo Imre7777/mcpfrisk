@@ -54,6 +54,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Check-IDs, die übersprungen werden sollen, z.B. --skip TOOL_POISONING",
     )
     scan_parser.add_argument(
+        "--write-tools-baseline", action="store_true",
+        help="Pinnt die aktuellen Tool-Beschreibungen als Baseline "
+             "(.mcpfrisk-tools.json) für TOOL_DESCRIPTION_DRIFT und beendet ohne "
+             "Scan. Die Datei ins Repo committen; bei bewusster Änderung erneut "
+             "ausführen (Rug-Pull-Schutz).",
+    )
+    scan_parser.add_argument(
         "--baseline", type=Path, default=None, metavar="PATH",
         help="Vergleicht Findings gegen eine gespeicherte Baseline-Datei -- nur "
              "NEUE Findings zählen für --fail-on. Fehlt die Datei, gilt das als "
@@ -196,6 +203,18 @@ def _run_scan(args: argparse.Namespace) -> int:
     if not target_path.exists():
         print(f"Fehler: Pfad '{target_path}' existiert nicht.", file=sys.stderr)
         return 2
+
+    # Pin-Aktion (kein Scan-Gate): den aktuellen Tool-Beschreibungs-Snapshot als
+    # Baseline für TOOL_DESCRIPTION_DRIFT schreiben und beenden.
+    if args.write_tools_baseline:
+        from mcpfrisk.core import tool_baseline
+
+        path = tool_baseline.baseline_path(target_path)
+        snap = tool_baseline.snapshot(target_path)
+        tool_baseline.write(path, snap)
+        print(f"✅ Tool-Beschreibungs-Baseline gepinnt ({len(snap)} Tool(s)): {path}")
+        print("   Die Datei ins Repo committen. Bei bewusster Änderung erneut ausführen.")
+        return 0
 
     _warn_if_jsts_missing(target_path)
     result = run_static_scan(target_path, skip_checks=set(args.skip))
