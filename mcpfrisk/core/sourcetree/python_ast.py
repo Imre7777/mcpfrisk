@@ -24,6 +24,11 @@ from mcpfrisk.core.sourcetree.model import (
 
 _ENV_HINTS = ("os.environ", "os.getenv", "getenv(", "process.env", "dotenv")
 
+# Framework-injizierte, NICHT modell-befüllte Parameter -- die stehen nicht im
+# Input-Schema, das ans Modell geht (self/cls sind Methoden-Bindings, ctx/context
+# ist die von FastMCP injizierte Context-Instanz). Feature 016.
+_INJECTED_PARAMS = frozenset({"self", "cls", "ctx", "context"})
+
 
 def _iter_dfs(node: ast.AST):
     """Preorder-Tiefensuche in Quellcode-/Ausführungsreihenfolge -- anders als
@@ -221,8 +226,22 @@ class PythonSourceModel(SourceModel):
             # beiden unentdeckt bleibt (Bug: description-Kwarg wurde ignoriert).
             parts = [ast.get_docstring(node), self._decorator_description(node)]
             description = " ".join(p for p in parts if p)
-            out.append(ToolDefinition(node.name, description, node.lineno))
+            out.append(
+                ToolDefinition(
+                    node.name, description, node.lineno, self._tool_params(node)
+                )
+            )
         return out
+
+    @staticmethod
+    def _tool_params(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
+        """Deklarierte Schema-Parameter eines Tools = die Funktionsargumente
+        (positional-only + positional-or-keyword + keyword-only), ohne die
+        framework-injizierten (self/cls/ctx/context). *args/**kwargs sind kein
+        benanntes Schema-Feld und bleiben außen vor."""
+        a = node.args
+        names = [p.arg for p in a.posonlyargs + a.args + a.kwonlyargs]
+        return [n for n in names if n not in _INJECTED_PARAMS]
 
     @staticmethod
     def _looks_like_tool(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:

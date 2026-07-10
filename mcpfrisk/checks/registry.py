@@ -14,6 +14,7 @@ from mcpfrisk.checks.path_traversal import PathTraversalCheck
 from mcpfrisk.checks.error_leakage import ErrorLeakageCheck
 from mcpfrisk.checks.rate_limiting import RateLimitingCheck
 from mcpfrisk.checks.rbac_cross_tenant import RbacCrossTenantCheck
+from mcpfrisk.checks.schema_docstring_mismatch import SchemaDocstringMismatchCheck
 from mcpfrisk.checks.schema_fuzzing import SchemaFuzzingCheck
 from mcpfrisk.checks.ssrf_check import SsrfCheck
 from mcpfrisk.checks.tool_description_drift import ToolDescriptionDriftCheck
@@ -30,6 +31,7 @@ STATIC_CHECKS: list[type[BaseCheck]] = [
     ToolNameCollisionCheck,
     McpConfigAuditCheck,
     ToolDescriptionDriftCheck,
+    SchemaDocstringMismatchCheck,
 ]
 
 # Tier-2-Checks (dynamisch, brauchen laufenden Server), ausgeführt via

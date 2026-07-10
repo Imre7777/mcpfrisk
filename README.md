@@ -8,7 +8,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12-blue)](https://www.python.org/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 [![Core deps](https://img.shields.io/badge/core%20deps-stdlib--only-success)](./pyproject.toml)
-[![Checks](https://img.shields.io/badge/checks-7%20static%20%2B%206%20dynamic-blueviolet)](#checks)
+[![Checks](https://img.shields.io/badge/checks-8%20static%20%2B%206%20dynamic-blueviolet)](#checks)
 [![OWASP MCP Top 10](https://img.shields.io/badge/OWASP-MCP%20Top%2010-informational)](https://owasp.org/www-project-mcp-top-10/)
 
 **A pre-deploy / CI security scanner for [MCP](https://modelcontextprotocol.io) server source code.**
@@ -27,10 +27,10 @@ Most MCP security tooling inspects **installed** servers at runtime, on the
 end user's machine. McpFrisk targets the **server author** and the **CI
 pipeline** — the last point where a vulnerability is cheap to fix.
 
-- 🔍 **Static (Tier 1) — 7 checks.** AST-based analysis for command injection,
+- 🔍 **Static (Tier 1) — 8 checks.** AST-based analysis for command injection,
   path traversal, hardcoded secrets, tool-description poisoning, tool-name
-  collision/shadowing, risky MCP config files, and rug-pull drift — for
-  **Python *and* JS/TS**.
+  collision/shadowing, risky MCP config files, rug-pull drift, and
+  schema/description mismatch — for **Python *and* JS/TS**.
 - 📡 **Dynamic (Tier 2) — 6 checks.** Probes a **running** server for auth-boundary
   bypass, SSRF, cross-tenant/RBAC leakage, schema-fuzzing crashes/leaks, error
   internals, and rate-limiting/DoS. Every finding is **evidence-grounded** —
@@ -225,6 +225,7 @@ the Security tab empty. Grant the job `permissions: { security-events: write }`.
 | `TOOL_NAME_COLLISION` | Duplicate / confusable tool names | MCP03 | shadowing risk, CWE-706 |
 | `MCP_CONFIG_AUDIT` | Risky MCP **config** files | MCP01/04/05/07 | scans a different target type |
 | `TOOL_DESCRIPTION_DRIFT` | Descriptions changed vs a pinned baseline | MCP04 | rug-pull (CVE-2025-54136) |
+| `SCHEMA_DOCSTRING_MISMATCH` | Sensitive input-schema param the description hides | MCP04 | Full-Schema-Poisoning, CWE-213 |
 
 <details>
 <summary>Details on the MCP-specific Tier-1 checks</summary>
@@ -259,6 +260,16 @@ It's **opt-in** (no baseline → skipped, no noise), whitespace-normalized (refo
 isn't drift), and **composes with `TOOL_POISONING`**: drift says *the description changed*,
 poisoning says *the new text is malicious*. Changed → MEDIUM (CWE-471); brand-new unpinned
 tool → LOW.
+
+**`SCHEMA_DOCSTRING_MISMATCH`** catches **Full-Schema-Poisoning** / out-of-scope parameters:
+a tool whose input schema requests a **sensitively-named** parameter (`api_key`,
+`session_token`, `ssh_key`, …) that its **description never discloses**. The client serializes
+the whole schema to the model, which dutifully fills every declared field — so a tool with a
+harmless description can silently harvest data the user never approved. It fires only on a
+**double signal** (sensitive name *and* undocumented), so a legitimate auth tool that names its
+`api_key` in the description stays finding-free. Composes with `TOOL_POISONING` (that check reads
+the *text*; this one measures the gap between *schema and text*). HIGH, CWE-213. Python (function
+signature) and JS/TS (`inputSchema`/Zod object) alike.
 
 </details>
 
@@ -322,11 +333,10 @@ stateless `server/discover` with a fallback to the legacy `initialize` handshake
 
 ## Roadmap
 
-**Tier 2 fully delivered** — all six originally planned dynamic checks are implemented.
+**Tier 2 fully delivered** — all six originally planned dynamic checks are implemented, and
+`SCHEMA_DOCSTRING_MISMATCH` (Full-Schema-Poisoning) has landed as the 8th static check.
 Next up (Tier 3, supply chain & spec compliance):
 
-- **`SCHEMA_DOCSTRING_MISMATCH`** — a tool's input schema requests more (or more sensitive)
-  data than its description discloses (Full-Schema-Poisoning). *In progress.*
 - **`DEPENDENCY_SCAN`** — a thin wrapper around `osv-scanner`/`pip-audit`, not a reinvention.
 - **`TYPOSQUAT_CHECK`** — package name vs. known popular MCP servers (edit distance).
 - **`PACKAGE_PROVENANCE`** — npm provenance / signature check.

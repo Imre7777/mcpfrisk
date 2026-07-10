@@ -287,8 +287,68 @@ class JsTsSourceModel(SourceModel):
             if not (callee == "tool" or callee.endswith(".tool") or callee.endswith(".registerTool")):
                 continue
             name, description = self._tool_meta(n)
-            out.append(ToolDefinition(name, description, self._line(n)))
+            out.append(
+                ToolDefinition(name, description, self._line(n), self._tool_params(n))
+            )
         return out
+
+    # Keys, die ein Optionen-/Metadaten-Objekt ausmachen (kein Schema-Feld).
+    _META_KEYS = frozenset(
+        {
+            "description", "name", "title", "annotations",
+            "inputschema", "input_schema", "outputschema", "output_schema",
+        }
+    )
+
+    def _tool_params(self, node) -> list[str]:
+        """Deklarierte Schema-Parameter eines tool()/registerTool()-Aufrufs.
+
+        Das Schema ist entweder (a) ein Metadaten-Objekt mit einer
+        `inputSchema`-Property (registerTool-Form) -> dessen Keys, (b) ein
+        JSON-Schema-Objekt mit `properties` -> dessen Keys, oder (c) ein rohes
+        Zod-Objekt-Argument, dessen Top-Level-Keys KEINE Metadaten-Keys sind
+        (positionale tool(name, desc, schema, handler)-Form) -> dessen Keys.
+        Verschachtelte/importierte Schemata sind out of scope (nur inline
+        sichtbares Schema). Feature 016."""
+        argnode = node.child_by_field_name("arguments")
+        if argnode is None:
+            return []
+        for a in argnode.named_children:
+            if a.type != "object":
+                continue
+            lower = {k.lower() for k in self._object_keys(a)}
+            if "inputschema" in lower or "input_schema" in lower:
+                inner = self._object_value(a, ("inputSchema", "input_schema"))
+                if inner is not None and inner.type == "object":
+                    return self._object_keys(inner)
+            if "properties" in lower:
+                inner = self._object_value(a, ("properties",))
+                if inner is not None and inner.type == "object":
+                    return self._object_keys(inner)
+            if not (lower & self._META_KEYS):
+                return self._object_keys(a)
+        return []
+
+    def _object_keys(self, obj) -> list[str]:
+        out: list[str] = []
+        for pair in obj.named_children:
+            if pair.type != "pair":
+                continue
+            k = pair.child_by_field_name("key")
+            if k is not None:
+                out.append(self._text(k).strip("\"'`"))
+        return out
+
+    def _object_value(self, obj, keys):
+        wanted = {k.lower() for k in keys}
+        for pair in obj.named_children:
+            if pair.type != "pair":
+                continue
+            k = pair.child_by_field_name("key")
+            v = pair.child_by_field_name("value")
+            if k is not None and v is not None and self._text(k).strip("\"'`").lower() in wanted:
+                return v
+        return None
 
     def _tool_meta(self, node) -> tuple[str, str]:
         argnode = node.child_by_field_name("arguments")

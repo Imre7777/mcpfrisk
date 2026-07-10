@@ -81,6 +81,12 @@ class ToolDefinition:
     name: str
     description: str
     line: int
+    # Deklarierte, modell-befüllbare Parameter-Namen des Tools -- bei Python die
+    # Funktionssignatur (framework-injizierte wie ctx ausgefiltert), bei JS/TS
+    # die Top-Level-Keys des inputSchema-/Zod-Objekts. Additiv (Default []),
+    # damit bestehende ToolDefinition(name, description, line)-Aufrufe unverändert
+    # gültig bleiben (Feature 016).
+    parameters: list[str] = field(default_factory=list)
 
 
 @dataclass

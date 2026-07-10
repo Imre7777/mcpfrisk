@@ -341,6 +341,7 @@ class TestFullScanIntegration:
             "HARDCODED_SECRETS",
             "TOOL_POISONING",
             "TOOL_NAME_COLLISION",
+            "SCHEMA_DOCSTRING_MISMATCH",
         }
 
     def test_skip_checks_parameter_works(self, tmp_path):
