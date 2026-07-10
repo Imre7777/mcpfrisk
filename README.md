@@ -172,6 +172,7 @@ job) for the action dogfooding itself against this repo's own fixtures (with
 | `HARDCODED_SECRETS` | API keys/tokens in source code | MCP01 | — |
 | `TOOL_POISONING` | Hidden instructions in tool descriptions | MCP04 | 84% success rate under auto-approval |
 | `TOOL_NAME_COLLISION` | Duplicate / confusingly-similar tool names (shadowing risk) | MCP03 | — |
+| `MCP_CONFIG_AUDIT` | Risky MCP **config** files (secrets, injection/unpinned launch, auto-approve, no-auth) | MCP01/04/05/07 | 79% plaintext creds / 40% no auth |
 
 `TOOL_NAME_COLLISION` flags two tool registrations sharing an **exact** name
 (undefined which one the client resolves — one silently shadows the other →
@@ -180,6 +181,19 @@ LOW, an agent-confusion risk). Both cite *both* source locations. Scope is
 honest: McpFrisk scans one server, so it catches *intra-repo* collisions —
 cross-server shadowing (a different malicious server registering a colliding
 name) is out of scope. CWE-706. A check no generic SAST tool performs.
+
+`MCP_CONFIG_AUDIT` is the one check that scans a **different target type** — the
+MCP config files (`mcp.json`, `claude_desktop_config.json`, `.mcp.json`,
+`.cursor/mcp.json`, …) over which servers are launched and wired up, not server
+source. It flags five real, config-driven risks: plaintext credentials in a
+server's `env`/`headers` (HIGH, CWE-798 — 79% of servers ship these), an
+injection-prone launch command (`sh -c` / `curl|sh`, HIGH, CWE-78 — the
+CVE-2025-59536 class), an **unpinned** `npx`/`uvx`/`pip` package (MEDIUM,
+CWE-829 — rug-pull/supply-chain), over-broad auto-approve flags
+(`enableAllProjectMcpServers`/`autoApprove`, MEDIUM, CWE-862 — the
+CVE-2026-21852 class), and a remote `url` server with no auth header (LOW,
+CWE-306). Env references (`${VAR}`), pinned packages, and `.example` templates
+stay finding-free. This closes the clearest coverage gap versus `agent-audit`.
 
 Each check is a self-contained class under `mcpfrisk/checks/`, registered in
 `checks/registry.py`. Adding a new check means: a new file plus one entry in

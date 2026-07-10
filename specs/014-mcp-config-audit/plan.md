@@ -1,7 +1,6 @@
 # Implementation Plan: MCP_CONFIG_AUDIT (014-mcp-config-audit)
 
-**Spec**: [`spec.md`](./spec.md) | **Status**: Design entschieden, bereit zur
-Implementierung.
+**Spec**: [`spec.md`](./spec.md) | **Status**: IMPLEMENTIERT (2026-07-05).
 
 ## Technical Context
 

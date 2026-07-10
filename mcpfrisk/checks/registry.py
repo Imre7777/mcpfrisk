@@ -9,6 +9,7 @@ from __future__ import annotations
 from mcpfrisk.checks.auth_boundary import AuthBoundaryCheck
 from mcpfrisk.checks.command_injection import CommandInjectionCheck
 from mcpfrisk.checks.hardcoded_secrets import HardcodedSecretsCheck
+from mcpfrisk.checks.mcp_config_audit import McpConfigAuditCheck
 from mcpfrisk.checks.path_traversal import PathTraversalCheck
 from mcpfrisk.checks.error_leakage import ErrorLeakageCheck
 from mcpfrisk.checks.rate_limiting import RateLimitingCheck
@@ -26,6 +27,7 @@ STATIC_CHECKS: list[type[BaseCheck]] = [
     HardcodedSecretsCheck,
     ToolDescriptionPoisoningCheck,
     ToolNameCollisionCheck,
+    McpConfigAuditCheck,
 ]
 
 # Tier-2-Checks (dynamisch, brauchen laufenden Server), ausgeführt via

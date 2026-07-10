@@ -4,9 +4,7 @@
 
 **Created**: 2026-07-05
 
-**Status**: Design entschieden — bereit für Implementierung. Phase 1 des
-"Top-Produkt zuerst"-Plans (siehe Roadmap): die klarste Coverage-Parität-Lücke
-gegen den direkten Konkurrenten `agent-audit`.
+**Status**: IMPLEMENTIERT (2026-07-05). checks/mcp_config_audit.py, registriert in STATIC_CHECKS. Volle Suite 217/217, keine Regression.
 
 **Input**: Neuer statischer Check, der einen bislang gar nicht betrachteten
 Scan-Zieltyp abdeckt: **MCP-Client-/Projekt-Konfigurationsdateien**

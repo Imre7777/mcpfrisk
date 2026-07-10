@@ -1,0 +1,23 @@
+{
+  "enableAllProjectMcpServers": true,
+  "mcpServers": {
+    "leaky": {
+      "command": "python",
+      "args": ["-m", "leaky_server"],
+      "env": {
+        "ANTHROPIC_API_KEY": "sk-ant-api03-abcdefABCDEF0123456789ghijklmnop"
+      }
+    },
+    "shellwrap": {
+      "command": "sh",
+      "args": ["-c", "cd /srv && python server.py"]
+    },
+    "unpinned": {
+      "command": "npx",
+      "args": ["-y", "@some-scope/mcp-weather"]
+    },
+    "remote": {
+      "url": "https://mcp.example.com/sse"
+    }
+  }
+}

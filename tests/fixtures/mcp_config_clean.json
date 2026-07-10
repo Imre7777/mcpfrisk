@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "safe_local": {
+      "command": "python",
+      "args": ["-m", "safe_server"],
+      "env": {
+        "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
+      }
+    },
+    "pinned": {
+      "command": "npx",
+      "args": ["-y", "@some-scope/mcp-weather@1.4.2"]
+    },
+    "direct_binary": {
+      "command": "/usr/local/bin/my-mcp-server",
+      "args": ["--stdio"]
+    },
+    "remote_authed": {
+      "url": "https://mcp.example.com/sse",
+      "headers": {
+        "Authorization": "Bearer ${MCP_TOKEN}"
+      }
+    }
+  }
+}

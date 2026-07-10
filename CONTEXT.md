@@ -57,8 +57,12 @@ laufende Server macht). `mcpfrisk` war zum Zeitpunkt der Recherche frei.
 | `HARDCODED_SECRETS` | `checks/hardcoded_secrets.py` | API-Keys/Tokens im Quellcode (bekannte Formate + Entropie-Heuristik) | MCP01 | CWE-798 |
 | `TOOL_POISONING` | `checks/tool_poisoning.py` | Versteckte Instruktionen in Tool-Docstrings (das MCP-spezifischste Risiko) | MCP04 | CWE-94 |
 | `TOOL_NAME_COLLISION` | `checks/tool_name_collision.py` | Doppelte (MEDIUM) / verwechselbar ähnliche (LOW) Tool-Namen im selben Server -- Shadowing-Risiko; nur intra-repo (Cross-Server out of scope). Feature `011-tool-name-collision` | MCP03 | CWE-706 |
+| `MCP_CONFIG_AUDIT` | `checks/mcp_config_audit.py` | MCP-CONFIG-Dateien (mcp.json/claude_desktop_config.json/…) statt Quellcode: Klartext-Secrets (HIGH), injection/ungepinnte Starts (HIGH/MEDIUM), Auto-Approve-Flags (MEDIUM), remote ohne Auth (LOW). Feature `014-mcp-config-audit` | MCP01/04/05/07 | CWE-798/78/829/862/306 |
 
-Alle fünf sind in `mcpfrisk/checks/registry.py` registriert.
+Alle sechs sind in `mcpfrisk/checks/registry.py` registriert. **Besonderheit
+`MCP_CONFIG_AUDIT`:** der einzige Check mit einem anderen Scan-Zieltyp (JSON-
+Config statt Quellcode-AST) -- er greift nur, wenn eine MCP-Config im Ziel
+liegt (`applies_to`), sonst „skipped" (kein Fehler).
 
 **Test-Status:** 17 pytest-Tests in `tests/test_checks.py`, alle grün.
 Jeder Check hat mindestens einen True-Positive-Test (gegen
@@ -93,6 +97,7 @@ mcpfrisk/
 │   ├── hardcoded_secrets.py
 │   ├── tool_poisoning.py
 │   ├── tool_name_collision.py  # Tier 1: TOOL_NAME_COLLISION (Shadowing, Feature 011)
+│   ├── mcp_config_audit.py  # Tier 1: MCP_CONFIG_AUDIT (Config-Dateien, Feature 014)
 │   ├── auth_boundary.py    # Tier 2: AUTH_BOUNDARY
 │   ├── ssrf_check.py        # Tier 2: SSRF_CHECK (out-of-band Callback)
 │   ├── _ssrf_callback.py    # Loopback-Callback-Listener für SSRF_CHECK (geteilter Nicht-Check-Helfer)
