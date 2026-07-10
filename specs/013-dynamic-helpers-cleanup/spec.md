@@ -4,8 +4,7 @@
 
 **Created**: 2026-07-05
 
-**Status**: VORBEREITET — spec/plan/tasks geschrieben, NICHT implementiert.
-Implementierung folgt nach dem Kontext-Reset.
+**Status**: IMPLEMENTIERT (2026-07-05). _dynamic_helpers.py angelegt, 4 Checks umgestellt, MARKET-RESEARCH.md korrigiert. Volle Suite 203/203, verhaltensneutral.
 
 **Input**: Backlog-Option 3 (Code-Cleanup) nach Abschluss der neuen Checks
 (011/012). Zwei getrennte, risikoarme Aufräum-Arbeiten:

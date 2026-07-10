@@ -38,9 +38,15 @@ Die drei Probe-Klassen:
 from __future__ import annotations
 
 import json
-import re
 import uuid
 
+from mcpfrisk.checks._dynamic_helpers import (
+    find_leak,
+    is_read_tool,
+    tool_properties,
+    tool_required,
+    truncate,
+)
 from mcpfrisk.core.base_check import BaseDynamicCheck
 from mcpfrisk.core.dynamic_runner import DynamicSession, DynamicTransportError
 from mcpfrisk.core.models import (
@@ -52,44 +58,10 @@ from mcpfrisk.core.models import (
     Severity,
 )
 
-# Tool-Heuristik (analog RBAC_CROSS_TENANT/SCHEMA_FUZZING): US3 zielt nie auf
-# ein mutierendes Tool.
-_READ_HINTS = ("get", "list", "read", "fetch", "search", "view", "show", "find", "query", "describe")
-_MUTATE_HINTS = (
-    "create", "update", "delete", "write", "set", "remove", "patch", "put",
-    "add", "insert", "modify", "drop", "revoke", "grant", "upload",
-)
+# Tool-Klassifikation + Leak-Marker sind in _dynamic_helpers konsolidiert
+# (geteilt mit SCHEMA_FUZZING/RBAC_CROSS_TENANT/RATE_LIMITING, Feature 013).
+# ID-Hints sind ERROR_LEAKAGE-spezifisch (US3) und bleiben lokal.
 _ID_HINTS = frozenset({"id", "key", "uuid", "record_id", "recordid", "resource_id", "ref", "slug"})
-
-_EVIDENCE_MAX = 200
-
-# Dieselben konservativen Leak-Marker wie SCHEMA_FUZZING US2 -- lokal
-# dupliziert (Prinzip II: Plugin-Isolation, keine Cross-Check-Imports).
-_EXCEPTION_CLASS_RE = re.compile(r"\b[A-Z][A-Za-z0-9_]*(?:Error|Exception)\b")
-_TRACEBACK_RE = re.compile(r"Traceback \(most recent call last\)")
-_PY_FRAME_RE = re.compile(r'File "[^"]+", line \d+')
-_JS_FRAME_RE = re.compile(r"at (?:Object\.<anonymous>|[\w.$]+ \()")
-_WIN_PATH_RE = re.compile(r"[A-Za-z]:\\(?:[^\s\"'\\]+\\)+[^\s\"'\\]+")
-_UNIX_PATH_RE = re.compile(r"(?:/[\w.\-]+){2,}")
-_SQL_ERROR_RE = re.compile(
-    r"SQLSTATE\[|ORA-\d{5}|sqlite3\.\w*Error|You have an error in your SQL syntax"
-)
-_LEAK_PATTERNS = (
-    _TRACEBACK_RE, _PY_FRAME_RE, _JS_FRAME_RE, _WIN_PATH_RE, _UNIX_PATH_RE,
-    _SQL_ERROR_RE, _EXCEPTION_CLASS_RE,
-)
-
-
-def _find_leak(text: str) -> str | None:
-    for pattern in _LEAK_PATTERNS:
-        match = pattern.search(text)
-        if match:
-            return match.group(0)
-    return None
-
-
-def _truncate(text: str, limit: int = _EVIDENCE_MAX) -> str:
-    return text if len(text) <= limit else text[:limit] + "…"
 
 
 class ErrorLeakageCheck(BaseDynamicCheck):
@@ -159,10 +131,10 @@ class ErrorLeakageCheck(BaseDynamicCheck):
             if not isinstance(tool, dict):
                 continue
             name = tool.get("name")
-            if not isinstance(name, str) or not self._is_read_tool(name):
+            if not isinstance(name, str) or not is_read_tool(name):
                 continue
-            props = self._properties(tool)
-            for param in self._required(tool):
+            props = tool_properties(tool)
+            for param in tool_required(tool):
                 if not isinstance(param, str) or param.lower() not in _ID_HINTS:
                     continue
                 pdef = props.get(param)
@@ -184,36 +156,16 @@ class ErrorLeakageCheck(BaseDynamicCheck):
             return None
         return self._verdict(name, param, ErrorProbeClass.NONEXISTENT_RESOURCE, response)
 
-    # -- shared helpers ----------------------------------------------------
-    @staticmethod
-    def _is_read_tool(name: str) -> bool:
-        n = name.lower()
-        if any(h in n for h in _MUTATE_HINTS):
-            return False  # konservativ: nie ein potenziell mutierendes Tool proben
-        return any(h in n for h in _READ_HINTS)
-
-    @staticmethod
-    def _required(tool: dict) -> set[str]:
-        schema = tool.get("inputSchema") or tool.get("input_schema") or {}
-        req = schema.get("required") if isinstance(schema, dict) else None
-        return set(req) if isinstance(req, list) else set()
-
-    @staticmethod
-    def _properties(tool: dict) -> dict:
-        schema = tool.get("inputSchema") or tool.get("input_schema") or {}
-        props = schema.get("properties") if isinstance(schema, dict) else None
-        return props if isinstance(props, dict) else {}
-
     def _verdict(
         self, tool: str, param: str, probe_class: ErrorProbeClass, response: dict
     ) -> ErrorProbe:
         text = json.dumps(response, ensure_ascii=False)
-        leak = _find_leak(text)
+        leak = find_leak(text)
         if leak:
             return ErrorProbe(
                 tool, param, probe_class, BoundaryOutcome.NOT_ENFORCED,
-                f"Fehlerantwort enthaelt Interna-Marker: '{_truncate(leak, 80)}' "
-                f"(Ausschnitt: {_truncate(text)})",
+                f"Fehlerantwort enthaelt Interna-Marker: '{truncate(leak, 80)}' "
+                f"(Ausschnitt: {truncate(text)})",
             )
         return ErrorProbe(
             tool, param, probe_class, BoundaryOutcome.ENFORCED, "kein Interna-Leak beobachtet"

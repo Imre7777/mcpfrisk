@@ -1,7 +1,6 @@
 # Implementation Plan: Dynamic-Helpers-Cleanup (013)
 
-**Spec**: [`spec.md`](./spec.md) | **Status**: VORBEREITET — nicht implementiert
-(Implementierung nach Kontext-Reset).
+**Spec**: [`spec.md`](./spec.md) | **Status**: IMPLEMENTIERT (2026-07-05).
 
 ## Technical Context
 

@@ -27,8 +27,14 @@ SSRF_CHECK-Scope).
 from __future__ import annotations
 
 import json
-import re
 
+from mcpfrisk.checks._dynamic_helpers import (
+    find_leak,
+    is_read_tool,
+    tool_properties,
+    tool_required,
+    truncate,
+)
 from mcpfrisk.core.base_check import BaseDynamicCheck
 from mcpfrisk.core.dynamic_runner import DynamicSession, DynamicTransportError
 from mcpfrisk.core.models import (
@@ -40,48 +46,15 @@ from mcpfrisk.core.models import (
     Severity,
 )
 
-# Tool-Heuristik (analog RBAC_CROSS_TENANT): nur lesende Tools werden gefuzzt.
-_READ_HINTS = ("get", "list", "read", "fetch", "search", "view", "show", "find", "query", "describe")
-_MUTATE_HINTS = (
-    "create", "update", "delete", "write", "set", "remove", "patch", "put",
-    "add", "insert", "modify", "drop", "revoke", "grant", "upload",
-)
-
+# Tool-Klassifikation + Leak-Marker sind in _dynamic_helpers konsolidiert
+# (geteilt mit ERROR_LEAKAGE/RBAC_CROSS_TENANT/RATE_LIMITING, Feature 013).
 _MAX_TOOLS = 6
 _MAX_PAYLOADS_PER_TOOL = 8
 _PROBE_TIMEOUT_S = 1.5
-_EVIDENCE_MAX = 200
 _OVERSIZED_STRING_LEN = 50_000
 
 _CRASH_TAG = "[CRASH]"
 _LEAK_TAG = "[LEAK]"
-
-# Konservative Leak-Marker -- eindeutig genug, um FP-arm zu bleiben (Prinzip III).
-_EXCEPTION_CLASS_RE = re.compile(r"\b[A-Z][A-Za-z0-9_]*(?:Error|Exception)\b")
-_TRACEBACK_RE = re.compile(r"Traceback \(most recent call last\)")
-_PY_FRAME_RE = re.compile(r'File "[^"]+", line \d+')
-_JS_FRAME_RE = re.compile(r"at (?:Object\.<anonymous>|[\w.$]+ \()")
-_WIN_PATH_RE = re.compile(r"[A-Za-z]:\\(?:[^\s\"'\\]+\\)+[^\s\"'\\]+")
-_UNIX_PATH_RE = re.compile(r"(?:/[\w.\-]+){2,}")
-_SQL_ERROR_RE = re.compile(
-    r"SQLSTATE\[|ORA-\d{5}|sqlite3\.\w*Error|You have an error in your SQL syntax"
-)
-_LEAK_PATTERNS = (
-    _TRACEBACK_RE, _PY_FRAME_RE, _JS_FRAME_RE, _WIN_PATH_RE, _UNIX_PATH_RE,
-    _SQL_ERROR_RE, _EXCEPTION_CLASS_RE,
-)
-
-
-def _find_leak(text: str) -> str | None:
-    for pattern in _LEAK_PATTERNS:
-        match = pattern.search(text)
-        if match:
-            return match.group(0)
-    return None
-
-
-def _truncate(text: str, limit: int = _EVIDENCE_MAX) -> str:
-    return text if len(text) <= limit else text[:limit] + "…"
 
 
 def _benign_value(pdef: object) -> object:
@@ -185,37 +158,18 @@ class SchemaFuzzingCheck(BaseDynamicCheck):
             return []
         return [
             t for t in tools
-            if isinstance(t, dict) and isinstance(t.get("name"), str) and self._is_read_tool(t["name"])
+            if isinstance(t, dict) and isinstance(t.get("name"), str) and is_read_tool(t["name"])
         ]
 
-    @staticmethod
-    def _is_read_tool(name: str) -> bool:
-        n = name.lower()
-        if any(h in n for h in _MUTATE_HINTS):
-            return False  # konservativ: nie ein potenziell mutierendes Tool proben
-        return any(h in n for h in _READ_HINTS)
-
-    @staticmethod
-    def _required(tool: dict) -> set[str]:
-        schema = tool.get("inputSchema") or tool.get("input_schema") or {}
-        req = schema.get("required") if isinstance(schema, dict) else None
-        return set(req) if isinstance(req, list) else set()
-
-    @staticmethod
-    def _properties(tool: dict) -> dict:
-        schema = tool.get("inputSchema") or tool.get("input_schema") or {}
-        props = schema.get("properties") if isinstance(schema, dict) else None
-        return props if isinstance(props, dict) else {}
-
     def _benign_args(self, tool: dict) -> dict:
-        return {p: _benign_value(pdef) for p, pdef in self._properties(tool).items()}
+        return {p: _benign_value(pdef) for p, pdef in tool_properties(tool).items()}
 
     # -- payload generation (FR-001) ------------------------------------
     def _generate_payloads(
         self, tool: dict, benign_args: dict
     ) -> list[tuple[FuzzProbeClass, str, dict]]:
-        props = self._properties(tool)
-        required = self._required(tool)
+        props = tool_properties(tool)
+        required = tool_required(tool)
         payloads: list[tuple[FuzzProbeClass, str, dict]] = []
         for param, pdef in props.items():
             declared_type = pdef.get("type") if isinstance(pdef, dict) else None
@@ -258,12 +212,12 @@ class SchemaFuzzingCheck(BaseDynamicCheck):
             return self._after_transport_failure(session, tool, param, probe_class, exc)
 
         text = json.dumps(response, ensure_ascii=False)
-        leak = _find_leak(text)
+        leak = find_leak(text)
         if leak:
             return FuzzProbe(
                 tool, param, probe_class, BoundaryOutcome.NOT_ENFORCED,
-                f"{_LEAK_TAG} Fehlerantwort enthaelt Interna-Marker: '{_truncate(leak, 80)}' "
-                f"(Ausschnitt: {_truncate(text)})",
+                f"{_LEAK_TAG} Fehlerantwort enthaelt Interna-Marker: '{truncate(leak, 80)}' "
+                f"(Ausschnitt: {truncate(text)})",
             )
         return FuzzProbe(
             tool, param, probe_class, BoundaryOutcome.ENFORCED,

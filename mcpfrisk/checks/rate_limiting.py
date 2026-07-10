@@ -40,6 +40,7 @@ import json
 import re
 import time
 
+from mcpfrisk.checks._dynamic_helpers import is_read_tool, tool_properties, truncate
 from mcpfrisk.core.base_check import BaseDynamicCheck
 from mcpfrisk.core.dynamic_runner import DynamicSession, DynamicTransportError
 from mcpfrisk.core.models import (
@@ -51,28 +52,17 @@ from mcpfrisk.core.models import (
     Severity,
 )
 
-# Tool-Heuristik (analog RBAC_CROSS_TENANT/SCHEMA_FUZZING/ERROR_LEAKAGE): der
-# Burst zielt nie auf ein mutierendes Tool.
-_READ_HINTS = ("get", "list", "read", "fetch", "search", "view", "show", "find", "query", "describe")
-_MUTATE_HINTS = (
-    "create", "update", "delete", "write", "set", "remove", "patch", "put",
-    "add", "insert", "modify", "drop", "revoke", "grant", "upload",
-)
-
+# Tool-Klassifikation ist in _dynamic_helpers konsolidiert (Feature 013). Das
+# Drossel-Signal-Muster ist RATE_LIMITING-spezifisch und bleibt lokal.
 _BURST_SIZE = 10
 _DEGRADATION_RATIO = 5.0
 _DEGRADATION_MIN_ABS_S = 0.2
 _MIN_BASELINE_S = 0.005  # Floor gegen Divisions-/Mess-Rauschen bei einem quasi-0s-Baseline
-_EVIDENCE_MAX = 200
 
 _THROTTLE_RE = re.compile(
     r"rate.?limit|too many requests|quota exceeded|slow down|retry.?after|\b429\b",
     re.IGNORECASE,
 )
-
-
-def _truncate(text: str, limit: int = _EVIDENCE_MAX) -> str:
-    return text if len(text) <= limit else text[:limit] + "…"
 
 
 def _benign_value(pdef: object) -> object:
@@ -145,25 +135,12 @@ class RateLimitingCheck(BaseDynamicCheck):
         if not isinstance(tools, list):
             return None
         for t in tools:
-            if isinstance(t, dict) and isinstance(t.get("name"), str) and self._is_read_tool(t["name"]):
+            if isinstance(t, dict) and isinstance(t.get("name"), str) and is_read_tool(t["name"]):
                 return t
         return None
 
-    @staticmethod
-    def _is_read_tool(name: str) -> bool:
-        n = name.lower()
-        if any(h in n for h in _MUTATE_HINTS):
-            return False  # konservativ: nie ein potenziell mutierendes Tool belasten
-        return any(h in n for h in _READ_HINTS)
-
-    @staticmethod
-    def _properties(tool: dict) -> dict:
-        schema = tool.get("inputSchema") or tool.get("input_schema") or {}
-        props = schema.get("properties") if isinstance(schema, dict) else None
-        return props if isinstance(props, dict) else {}
-
     def _benign_args(self, tool: dict) -> dict:
-        return {p: _benign_value(pdef) for p, pdef in self._properties(tool).items()}
+        return {p: _benign_value(pdef) for p, pdef in tool_properties(tool).items()}
 
     # -- probing ---------------------------------------------------------
     def _timed_call(
@@ -236,13 +213,13 @@ class RateLimitingCheck(BaseDynamicCheck):
                 title="Denial of Service Under Burst Load (RATE_LIMITING)",
                 description=(
                     f"Das Tool '{probe.tool}' brachte den Server unter einem kurzen, begrenzten "
-                    f"Aufruf-Burst zum Absturz bzw. machte ihn unerreichbar ({_truncate(probe.observed)}). "
+                    f"Aufruf-Burst zum Absturz bzw. machte ihn unerreichbar ({truncate(probe.observed)}). "
                     "Das belegt fehlendes Rate-Limiting/Concurrency-Management -- ein Client (auch ein "
                     "versehentlich looping Agent) kann den Server per einfacher Aufruf-Serie lahmlegen."
                 ),
                 file_path=None,
                 line_number=None,
-                snippet=f"{probe.tool}() burst -> {_truncate(probe.observed)}",
+                snippet=f"{probe.tool}() burst -> {truncate(probe.observed)}",
                 owasp_mcp_ref=None,  # keine passende OWASP-MCP-Top-10-Kategorie, siehe plan.md
                 cwe_ref="CWE-400",
                 remediation=(
@@ -263,13 +240,13 @@ class RateLimitingCheck(BaseDynamicCheck):
             title="Unbounded Resource Consumption Under Burst Load (RATE_LIMITING)",
             description=(
                 f"Das Tool '{probe.tool}' zeigte unter einem kurzen Aufruf-Burst eine deutliche, "
-                f"gemessene Latenz-Degradation ohne jede Drosselung ({_truncate(probe.observed)}). "
+                f"gemessene Latenz-Degradation ohne jede Drosselung ({truncate(probe.observed)}). "
                 "Der Server bleibt zwar am Leben, verarbeitet aber jede zusätzliche Last ohne "
                 "erkennbare Gegenmaßnahme -- ein Vorbote von Ressourcen-Erschöpfung unter echter Last."
             ),
             file_path=None,
             line_number=None,
-            snippet=f"{probe.tool}() burst -> {_truncate(probe.observed)}",
+            snippet=f"{probe.tool}() burst -> {truncate(probe.observed)}",
             owasp_mcp_ref=None,  # keine passende OWASP-MCP-Top-10-Kategorie, siehe plan.md
             cwe_ref="CWE-400 / CWE-770",
             remediation=(

@@ -364,25 +364,33 @@ Tier-3-Roadmap hinaus):
 
 ## 5. Wo mcpfrisk aktuell steht (ehrliche Selbsteinschätzung)
 
-| Dimension | mcpfrisk (aktuell) | agent-audit | mcp-sec-audit |
+> **Aktualisiert 2026-07-05.** Die ursprüngliche Tabelle (Recherche Juni 2026)
+> beschrieb einen Tag-1-Stand; mehrere der dort genannten Schwächen sind seither
+> durch Features 002 (JS/TS-AST), 005–009 (Tier 2), 010 (CI), 011/012 (neue
+> Checks/Cross-Function-Taint) und 013 (Cleanup) geschlossen. Die Tabelle unten
+> spiegelt den Ist-Stand; historische Einträge sind als solche kenntlich.
+
+| Dimension | mcpfrisk (Stand 2026-07-05) | agent-audit | mcp-sec-audit |
 |---|---|---|---|
-| Regelanzahl | 4 | 53 | "configurable rules", nicht klar quantifiziert |
-| OWASP-Mapping | Teilweise (OWASP MCP Top 10, nicht Agentic Top 10) | Vollständig, alle 10 ASI-Kategorien | Nicht erkennbar |
-| Taint-Tracking | Eine Ebene (direkte Zuweisungen) | Tool-boundary-aware, aber nur intra-procedural | Nicht spezifiziert |
-| JS/TS-Abdeckung | Nur 1 von 4 Checks (Command Injection) | "Limited pattern matching" | 0% (explizit dokumentiert) |
-| Dynamische Analyse | Keine (nur Tier-1 statisch) | Keine (rein statisch) | Ja (Docker + eBPF) |
-| CI-Integration | Eigener GitHub-Actions-Workflow | Offizielle GitHub Action, SARIF-Upload | Nicht erkennbar |
-| Validierung | 17 eigene Unit-Tests gegen 2 Fixtures | 1.239 Tests, externes Benchmark (94,6% Recall) | MCPTox-Benchmark (100%/74,7%) |
-| Community/Reife | Neu, 0 Stars | 167 Stars, 17 Forks, 13 Releases | Akademisches Paper, geringe sichtbare Adoption |
-| Baseline-Diffing | Nicht vorhanden | Vorhanden (`--baseline`) | Nicht erkennbar |
+| Regelanzahl | 5 statische + 6 dynamische Checks | 53 | "configurable rules", nicht klar quantifiziert |
+| OWASP-Mapping | OWASP MCP Top 10 (MCP01/03/04/05/07 + CWE je Finding) | Vollständig, alle 10 ASI-Kategorien | Nicht erkennbar |
+| Taint-Tracking | Intra-prozedural (inkl. verschachtelte Blöcke, Import-Alias) **+ Cross-Function eine Ebene** (Feature 012) | Tool-boundary-aware, aber **nur** intra-procedural (selbst dokumentiert) | Nicht spezifiziert |
+| JS/TS-Abdeckung | **Alle** statischen Checks per AST (tree-sitter, `SourceModel`-Port, Feature 002) | "Limited pattern matching" | 0% (explizit dokumentiert) |
+| Dynamische Analyse | **Ja** — 6 Tier-2-Checks gegen laufende Server (HTTP + stdio, evidenz-basiert) | Keine (rein statisch) | Ja (Docker + eBPF) |
+| CI-Integration | **Offizielle Composite GitHub Action + SARIF-Output + Baseline-Diffing** (Feature 010) | Offizielle GitHub Action, SARIF-Upload | Nicht erkennbar |
+| Validierung | 203 eigene Tests (paired vulnerable/clean, Py + JS/TS, HTTP + stdio) | 1.239 Tests, externes Benchmark (94,6% Recall) | MCPTox-Benchmark (100%/74,7%) |
+| Community/Reife | Jung, aber breit getestet; noch kein öffentliches Benchmark-Ergebnis | 167 Stars, 17 Forks, 13 Releases | Akademisches Paper, geringe sichtbare Adoption |
+| Baseline-Diffing | **Vorhanden** (`--baseline`/`--write-baseline`, `scan` + `probe`, Feature 010) | Vorhanden (`--baseline`) | Nicht erkennbar |
 | Lizenz | Apache 2.0 | MIT | Nicht klar |
 
-**Ehrliches Fazit:** In der direkten Pre-Deploy-Scanner-Kategorie ist
-mcpfrisk aktuell der am wenigsten ausgereifte der drei Anbieter.
-Das ist keine Überraschung für ein Projekt im Tag-1-Stadium — aber
-es bedeutet, dass "einfach weiterbauen wie geplant" nicht reicht, um
-"besser und umfangreicher" zu werden. Es braucht eine bewusste
-Differenzierungsstrategie (siehe Abschnitt 6).
+**Ehrliches Fazit (aktualisiert):** In den ursprünglich als Schwäche genannten
+Dimensionen (JS/TS-Tiefe, dynamische Analyse, CI-Integration, Baseline,
+Cross-Function-Taint) hat mcpfrisk zur direkten Konkurrenz aufgeschlossen bzw.
+sie in der MCP-*spezifischen* Tiefe (6 evidenz-basierte Tier-2-Checks, die
+`agent-audit`/`mcp-sec-audit` gar nicht haben) überholt. Die verbleibenden
+echten Lücken sind **Reife/Sichtbarkeit** (Stars, Releases) und ein
+**öffentliches, reproduzierbares Benchmark-Ergebnis** — kein Feature-Rückstand
+mehr, sondern Distribution und Glaubwürdigkeitsnachweis (siehe Abschnitt 6/7).
 
 ---
 
@@ -391,9 +399,19 @@ Differenzierungsstrategie (siehe Abschnitt 6).
 Basierend auf den oben identifizierten Lücken, geordnet nach
 Aufwand/Nutzen-Verhältnis:
 
+> **Status 2026-07-05:** Der Großteil dieser Strategie ist umgesetzt.
+> ✅ JS/TS-Erstklassigkeit (Feature 002) · ✅ Cross-Function-Taint eine Ebene
+> (012) · ✅ Baseline-/Diff-Scanning (010) · ✅ Name-Collision-Check (011) ·
+> ✅ komplette Tier-2-Roadmap, 6 Checks (005–009) · ✅ GitHub Action + SARIF
+> (010). **Noch offen:** Schema-vs-Docstring-Parameter-Abgleich (§6.2) und ein
+> **öffentliches Benchmark-Ergebnis** (§6.3, §7 Punkt 7) — der jetzt wichtigste
+> verbleibende Hebel, da die Feature-Lücken geschlossen sind.
+
 ### 6.1 Kurzfristig erreichbar, hoher Differenzierungswert
 
-**JS/TS-Erstklassigkeit statt Python-Only.** Beide direkten
+**JS/TS-Erstklassigkeit statt Python-Only.** ✅ **ERLEDIGT** (Feature 002): alle
+statischen Checks laufen per tree-sitter-AST über den `SourceModel`-Port, nicht
+mehr nur Regex bei CMD_INJECTION. — Historischer Kontext: Beide direkten
 Konkurrenten haben hier eine dokumentierte Schwäche
 (`mcp-sec-audit`: 0% Detection bei JS/TS; agent-audit: "limited
 pattern matching" außerhalb Python). MCP-Server werden zu einem
@@ -406,29 +424,34 @@ Konkurrenten — keine vage Behauptung, sondern eine Zahl, die man
 Seite an Seite zeigen kann (z.B. "100% Detection bei JS/TS-Fixtures,
 wo mcp-sec-audit 0% erreicht").
 
-**Cross-Function-Taint-Tracking.** agent-audit gibt offen zu, nur
-intra-procedural zu verfolgen. Ein mehrstufiges Taint-Tracking, das
-auch über Funktionsgrenzen hinweg verfolgt (z.B. via eines simplen
-Call-Graphs für den Python-AST), wäre eine konkrete technische
-Überlegenheit in exakt der Dimension, die der härteste Konkurrent
-selbst als Schwäche benennt.
+**Cross-Function-Taint-Tracking.** ✅ **ERLEDIGT** (Feature 012, eine Ebene):
+PATH_TRAVERSAL verfolgt Taint jetzt über eine Funktionsgrenze (Entry → Helfer →
+Sink, positional + keyword, benannte Same-Module-Helfer). — Historischer
+Kontext: agent-audit gibt offen zu, nur intra-procedural zu verfolgen; das war
+"eine konkrete technische Überlegenheit in exakt der Dimension, die der
+härteste Konkurrent selbst als Schwäche benennt". (Empirisch belegt, dass die
+Lücke nur PATH_TRAVERSAL betraf; tiefere Ketten/Cross-Module bleiben offen.)
 
-**Baseline-/Diff-Scanning.** agent-audit hat es, mcpfrisk nicht.
-Relativ einfach zu bauen (Findings nach Datei+Zeile+Check-ID hashen,
-gegen eine gespeicherte Baseline-JSON vergleichen), aber wichtig für
-echte CI-Workflows, wo Teams nicht bei jedem Scan alle historischen
-Findings neu sehen wollen.
+**Baseline-/Diff-Scanning.** ✅ **ERLEDIGT** (Feature 010): `--baseline`/
+`--write-baseline` für `scan` UND `probe`; Fingerprint = Check-ID + relativer
+Pfad + Zeile + Titel (portabel über CI-Runner), nur neue Findings blockieren.
 
 ### 6.2 Mittelfristig, differenziert klar gegen Konkurrenz
 
 **Eigene Checks aus den akademischen Benchmarks, die noch kein
-Produkt abdeckt** (siehe Abschnitt 4.5): Name-Collision-Erkennung,
-Schema-vs-Docstring-Parameter-Abgleich. Das wäre nicht "das Gleiche
-wie agent-audit nachbauen", sondern echte zusätzliche Abdeckung, die
-aktuell in **keinem** der untersuchten Produkte existiert.
+Produkt abdeckt** (siehe Abschnitt 4.5): Name-Collision-Erkennung
+(✅ **ERLEDIGT**, Feature 011: TOOL_NAME_COLLISION), Schema-vs-Docstring-
+Parameter-Abgleich (⏳ **noch offen** — der nächste günstige Kandidat, da
+`tool_definitions()` bereits Name/Beschreibung liefert, für den Parameter-
+Abgleich aber noch eine `inputSchema`-Repräsentation im Port fehlt). Das ist
+nicht "das Gleiche wie agent-audit nachbauen", sondern echte zusätzliche
+Abdeckung, die in **keinem** der untersuchten Produkte existiert.
 
 **Die Tier-2-Roadmap (AUTH_BOUNDARY, RBAC_CROSS_TENANT) konsequent
-umsetzen.** Wichtig: `mcp-sec-audit` macht zwar bereits dynamische
+umsetzen.** ✅ **ERLEDIGT** (Features 005–009): alle 6 geplanten Tier-2-Checks
+sind implementiert (AUTH_BOUNDARY, SSRF_CHECK, RBAC_CROSS_TENANT,
+SCHEMA_FUZZING, ERROR_LEAKAGE, RATE_LIMITING). Wichtig: `mcp-sec-audit` macht
+zwar bereits dynamische
 Analyse, aber fokussiert auf Capability-Erkennung
 (Command-Exec/File-I/O/Network), nicht auf Auth-Boundary-Tests oder
 RBAC-Cross-Tenant-Leckage im eigentlichen Sinn. Das ist eine Lücke,
@@ -445,11 +468,12 @@ das, was agent-audit von einem generischen Marketing-Claim
 unterscheidet — dieselbe Glaubwürdigkeitsstrategie ist für mcpfrisk
 nachvollziehbar und realistisch nachbaubar.
 
-**GitHub Action + SARIF-Output.** agent-audit hat beides, mcpfrisk
-aktuell nur einen rohen CI-Workflow im eigenen Repo. SARIF ist der
-Standard, den GitHub Code Scanning erwartet — ohne das bleibt
-mcpfrisk für GitHub-native Teams eine Stufe unbequemer in der
-Integration als die Konkurrenz.
+**GitHub Action + SARIF-Output.** ✅ **ERLEDIGT** (Feature 010): eine
+wiederverwendbare Composite Action (`action.yml`, installiert aus dem eigenen
+Checkout) + `--sarif`-Output für GitHub Code Scanning (Upload optional, da das
+Repo derzeit privat ohne GHAS ist). — Historischer Kontext: SARIF ist der
+Standard, den GitHub Code Scanning erwartet; ohne das blieb mcpfrisk für
+GitHub-native Teams eine Stufe unbequemer als die Konkurrenz.
 
 ### 6.4 Bewusst NICHT nachbauen
 
@@ -470,47 +494,40 @@ sollte (siehe CONTEXT.md, Prinzip 4: Zero Dependencies für Tier 1).
 
 ## 7. Priorisierte Roadmap-Anpassung (konkrete Reihenfolge)
 
+> **Status 2026-07-05:** Punkte 1–6 sind umgesetzt (Features 002/010/012/011/
+> 005–009). Der einzige noch offene Punkt ist **Nr. 7 (öffentliches
+> Benchmark-Ergebnis)** — und genau der ist jetzt, da alle Feature-Lücken
+> geschlossen sind, der wichtigste verbleibende Hebel: ein reproduzierbarer,
+> Seite-an-Seite-Vergleich gegen das Vulnerable-MCP-Servers-Lab würde die
+> inzwischen erreichte Feature-Parität in eine belegbare Zahl übersetzen.
+
 Basierend auf der Differenzierungsstrategie oben, eine angepasste
 Priorisierung relativ zur bisherigen Roadmap aus CONTEXT.md:
 
-1. **JS/TS-AST-Analyse für alle 4 bestehenden Checks** (statt nur
-   Regex bei Command Injection) — höchste Priorität, weil es die am
-   klarsten nachweisbare, benchmarkbare Lücke beider direkten
-   Konkurrenten schließt, bevor überhaupt neue Checks dazukommen.
-   *Begründung: Ein Tool, das in seiner Kern-Sprache schwächer ist
-   als die Konkurrenz, gewinnt nicht durch mehr Checks — erst die
-   Tiefe in den bestehenden Checks sichern, dann in die Breite gehen.*
+1. ✅ **ERLEDIGT (Feature 002)** — **JS/TS-AST-Analyse für alle bestehenden
+   Checks** (statt nur Regex bei Command Injection). *Begründung galt: erst
+   die Tiefe in den bestehenden Checks sichern, dann in die Breite gehen.*
 
-2. **Baseline-/Diff-Scanning** — vergleichsweise einfach umzusetzen,
-   schließt eine konkrete UX-Lücke gegen agent-audit, hoher
-   Nutzen für CI-Alltagstauglichkeit.
+2. ✅ **ERLEDIGT (Feature 010)** — **Baseline-/Diff-Scanning**, schließt die
+   CI-Alltagstauglichkeits-Lücke gegen agent-audit.
 
-3. **SARIF-Output + offizielle GitHub Action** — Standard-Erwartung
-   für GitHub-native Teams, ohne das wirkt mcpfrisk im direkten
-   Vergleich technisch unterlegen, unabhängig von der tatsächlichen
-   Erkennungsqualität.
+3. ✅ **ERLEDIGT (Feature 010)** — **SARIF-Output + offizielle GitHub Action.**
 
-4. **Cross-Function-Taint-Tracking** — technisch anspruchsvoller,
-   aber die Dimension, in der sich mcpfrisk am klarsten von
-   agent-audits selbst-eingeräumter Schwäche abheben kann.
+4. ✅ **ERLEDIGT (Feature 012, eine Ebene)** — **Cross-Function-Taint-Tracking**
+   (PATH_TRAVERSAL), exakt die Dimension von agent-audits selbst-eingeräumter
+   Schwäche.
 
-5. **Tier-2-Checks wie geplant** (AUTH_BOUNDARY zuerst, dann
-   RBAC_CROSS_TENANT) — weiterhin relevant und von keinem der
-   direkten Konkurrenten in dieser Form abgedeckt, aber zeitlich
-   nach den Punkten 1-4, weil die Tiefe in Tier 1 zuerst
-   wettbewerbsfähig sein muss.
+5. ✅ **ERLEDIGT (Features 005–009)** — **die komplette Tier-2-Roadmap**
+   (6 Checks), von keinem direkten Konkurrenten in dieser Form abgedeckt.
 
-6. **Eigene Checks aus der akademischen Taxonomie**
-   (Name-Collision, Schema-vs-Docstring-Mismatch) — niedrigere
-   Priorität, weil Nice-to-have-Differenzierung statt
-   Lücken-Schließung gegenüber bestehender Konkurrenz, aber
-   langfristig das Argument für "umfangreicher als alle anderen".
+6. **Eigene Checks aus der akademischen Taxonomie** — Name-Collision
+   ✅ **ERLEDIGT (Feature 011)**; Schema-vs-Docstring-Mismatch ⏳ **offen**
+   (nächster günstiger Check-Kandidat).
 
-7. **Öffentliches Benchmark-Ergebnis** gegen das Vulnerable-MCP-
-   Servers-Lab — als Marketing-/Glaubwürdigkeits-Meilenstein, sobald
-   Punkte 1-4 stehen und ein fairer Vergleich überhaupt aussagekräftig
-   wäre (vorher gegen die eigenen, noch dünnen Checks zu benchmarken,
-   würde nur die eigene Unterlegenheit dokumentieren).
+7. ⏳ **OFFEN — jetzt höchste Priorität:** **Öffentliches Benchmark-Ergebnis**
+   gegen das Vulnerable-MCP-Servers-Lab. Die ursprüngliche Bedingung ("sobald
+   Punkte 1–4 stehen") ist erfüllt — ein fairer, aussagekräftiger Vergleich
+   ist jetzt möglich und der klarste verbleibende Glaubwürdigkeits-Meilenstein.
 
 ---
 

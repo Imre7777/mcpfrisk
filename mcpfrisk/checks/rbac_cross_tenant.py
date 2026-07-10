@@ -22,6 +22,11 @@ from __future__ import annotations
 
 import json
 
+from mcpfrisk.checks._dynamic_helpers import (
+    is_read_tool,
+    tool_properties,
+    tool_required,
+)
 from mcpfrisk.core.base_check import BaseDynamicCheck
 from mcpfrisk.core.dynamic_runner import DynamicSession, DynamicTransportError
 from mcpfrisk.core.models import (
@@ -33,12 +38,8 @@ from mcpfrisk.core.models import (
     Severity,
 )
 
-# Tool-/Parameter-Heuristiken.
-_READ_HINTS = ("get", "list", "read", "fetch", "search", "view", "show", "find", "query", "describe")
-_MUTATE_HINTS = (
-    "create", "update", "delete", "write", "set", "remove", "patch", "put",
-    "add", "insert", "modify", "drop", "revoke", "grant", "upload",
-)
+# Tool-Klassifikation (READ/MUTATE) ist in _dynamic_helpers konsolidiert
+# (Feature 013). Die ID-/Tenant-Parameter-Hints sind RBAC-spezifisch, bleiben lokal.
 _ID_HINTS = frozenset({"id", "key", "uuid", "record_id", "recordid", "resource_id", "ref", "slug"})
 _TENANT_HINTS = frozenset({
     "tenant", "tenant_id", "tenantid", "owner", "org", "organization", "account",
@@ -117,33 +118,14 @@ class RbacCrossTenantCheck(BaseDynamicCheck):
             return []
         return [
             t for t in tools
-            if isinstance(t, dict) and isinstance(t.get("name"), str) and self._is_read_tool(t["name"])
+            if isinstance(t, dict) and isinstance(t.get("name"), str) and is_read_tool(t["name"])
         ]
-
-    @staticmethod
-    def _is_read_tool(name: str) -> bool:
-        n = name.lower()
-        if any(h in n for h in _MUTATE_HINTS):
-            return False  # konservativ: nie ein potenziell mutierendes Tool proben
-        return any(h in n for h in _READ_HINTS)
-
-    @staticmethod
-    def _required(tool: dict) -> set[str]:
-        schema = tool.get("inputSchema") or tool.get("input_schema") or {}
-        req = schema.get("required") if isinstance(schema, dict) else None
-        return set(req) if isinstance(req, list) else set()
-
-    @staticmethod
-    def _properties(tool: dict) -> dict:
-        schema = tool.get("inputSchema") or tool.get("input_schema") or {}
-        props = schema.get("properties") if isinstance(schema, dict) else None
-        return props if isinstance(props, dict) else {}
 
     def _discover(self, session: DynamicSession, a: str, b: str, tools: list[dict]) -> dict:
         """Erhebt A-private Marker (in A sichtbar, in B's Eigen-Sicht nicht) sowie
         A's Ressourcen-ID und Tenant-Wert über ein ohne Pflichtargumente
         aufrufbares Lese-Tool ('Listing')."""
-        listing = next((t for t in tools if not self._required(t)), None)
+        listing = next((t for t in tools if not tool_required(t)), None)
         markers_a: set[str] = set()
         markers_b: set[str] = set()
         a_ids: list[str] = []
@@ -255,7 +237,7 @@ class RbacCrossTenantCheck(BaseDynamicCheck):
 
     def _tool_with_param(self, tools: list[dict], hints: frozenset[str]) -> tuple[str, str] | None:
         for tool in tools:
-            for param in self._properties(tool):
+            for param in tool_properties(tool):
                 if isinstance(param, str) and param.lower() in hints:
                     return tool["name"], param
         return None

@@ -89,15 +89,30 @@ mcpfrisk/
 ├── checks/
 │   ├── registry.py        # STATIC_CHECKS + DYNAMIC_CHECKS -- HIER neue Checks eintragen
 │   ├── command_injection.py
-│   ├── path_traversal.py
+│   ├── path_traversal.py   # inkl. Cross-Function-Taint eine Ebene (Feature 012)
 │   ├── hardcoded_secrets.py
 │   ├── tool_poisoning.py
+│   ├── tool_name_collision.py  # Tier 1: TOOL_NAME_COLLISION (Shadowing, Feature 011)
 │   ├── auth_boundary.py    # Tier 2: AUTH_BOUNDARY
 │   ├── ssrf_check.py        # Tier 2: SSRF_CHECK (out-of-band Callback)
-│   ├── _ssrf_callback.py    # Loopback-Callback-Listener für SSRF_CHECK
-│   └── rbac_cross_tenant.py # Tier 2: RBAC_CROSS_TENANT (A/B-Identitäten, Fingerprint-Beleg)
+│   ├── _ssrf_callback.py    # Loopback-Callback-Listener für SSRF_CHECK (geteilter Nicht-Check-Helfer)
+│   ├── _dynamic_helpers.py  # geteilte Tool-Hints/Schema-Helfer/Leak-Marker der 4 call()-Checks (Feature 013)
+│   ├── rbac_cross_tenant.py # Tier 2: RBAC_CROSS_TENANT (A/B-Identitäten, Fingerprint-Beleg)
+│   ├── schema_fuzzing.py    # Tier 2: SCHEMA_FUZZING
+│   ├── error_leakage.py     # Tier 2: ERROR_LEAKAGE
+│   └── rate_limiting.py     # Tier 2: RATE_LIMITING
+├── core/
+│   ├── baseline.py         # Baseline-/Diff-Scanning (Fingerprint, Feature 010)
+│   └── sarif.py            # SARIF-2.1.0-Writer für GitHub Code Scanning (Feature 010)
 └── cli.py                 # argparse Entry Point (scan + probe), ruft runner/dynamic_runner + report
 ```
+
+**Geteilte Nicht-Check-Helfer (Prinzip II):** `_ssrf_callback.py` und
+`_dynamic_helpers.py` sind bewusst KEINE Checks (kein `BaseCheck`), sondern
+check-agnostische Utilities. Sie verletzen die Plugin-Isolation nicht: ein
+Check *nutzt* sie, *hängt* aber nicht von einem anderen Check ab. So werden
+z.B. die Leak-Marker der 4 dynamischen `call()`-Checks an EINEM Ort gepflegt
+(kein stiller Drift zwischen SCHEMA_FUZZING und ERROR_LEAKAGE).
 
 ### Designprinzip: Plugin-Architektur (Open/Closed)
 
