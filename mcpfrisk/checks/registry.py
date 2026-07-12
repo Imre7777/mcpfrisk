@@ -20,6 +20,7 @@ from mcpfrisk.checks.schema_fuzzing import SchemaFuzzingCheck
 from mcpfrisk.checks.ssrf_check import SsrfCheck
 from mcpfrisk.checks.tool_description_drift import ToolDescriptionDriftCheck
 from mcpfrisk.checks.tool_name_collision import ToolNameCollisionCheck
+from mcpfrisk.checks.typosquat import TyposquatCheck
 from mcpfrisk.checks.tool_poisoning import ToolDescriptionPoisoningCheck
 from mcpfrisk.core.base_check import BaseCheck, BaseDynamicCheck
 
@@ -33,6 +34,7 @@ STATIC_CHECKS: list[type[BaseCheck]] = [
     McpConfigAuditCheck,
     ToolDescriptionDriftCheck,
     SchemaDocstringMismatchCheck,
+    TyposquatCheck,
 ]
 
 # Tier-2-Checks (dynamisch, brauchen laufenden Server), ausgeführt via

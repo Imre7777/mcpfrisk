@@ -8,7 +8,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12-blue)](https://www.python.org/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 [![Core deps](https://img.shields.io/badge/core%20deps-stdlib--only-success)](./pyproject.toml)
-[![Checks](https://img.shields.io/badge/checks-8%20static%20%2B%207%20dynamic-blueviolet)](#checks)
+[![Checks](https://img.shields.io/badge/checks-9%20static%20%2B%207%20dynamic-blueviolet)](#checks)
 [![OWASP MCP Top 10](https://img.shields.io/badge/OWASP-MCP%20Top%2010-informational)](https://owasp.org/www-project-mcp-top-10/)
 
 **A pre-deploy / CI security scanner for [MCP](https://modelcontextprotocol.io) server source code.**
@@ -27,10 +27,10 @@ Most MCP security tooling inspects **installed** servers at runtime, on the
 end user's machine. McpFrisk targets the **server author** and the **CI
 pipeline** — the last point where a vulnerability is cheap to fix.
 
-- 🔍 **Static (Tier 1) — 8 checks.** AST-based analysis for command injection,
+- 🔍 **Static (Tier 1) — 9 checks.** AST-based analysis for command injection,
   path traversal, hardcoded secrets, tool-description poisoning, tool-name
-  collision/shadowing, risky MCP config files, rug-pull drift, and
-  schema/description mismatch — for **Python *and* JS/TS**.
+  collision/shadowing, risky MCP config files, rug-pull drift, schema/description
+  mismatch, and dependency typosquatting — for **Python *and* JS/TS**.
 - 📡 **Dynamic (Tier 2) — 7 checks.** Probes a **running** server for auth-boundary
   bypass, SSRF, cross-tenant/RBAC leakage, schema-fuzzing crashes/leaks, error
   internals, rate-limiting/DoS, and JSON-RPC protocol compliance. Every finding is
@@ -227,6 +227,7 @@ the Security tab empty. Grant the job `permissions: { security-events: write }`.
 | `MCP_CONFIG_AUDIT` | Risky MCP **config** files | MCP01/04/05/07 | scans a different target type |
 | `TOOL_DESCRIPTION_DRIFT` | Descriptions changed vs a pinned baseline | MCP04 | rug-pull (CVE-2025-54136) |
 | `SCHEMA_DOCSTRING_MISMATCH` | Sensitive input-schema param the description hides | MCP04 | Full-Schema-Poisoning, CWE-213 |
+| `TYPOSQUAT` | Dependency name confusably close to a known MCP package | MCP04 | supply chain, CWE-829 |
 
 <details>
 <summary>Details on the MCP-specific Tier-1 checks</summary>
@@ -271,6 +272,15 @@ harmless description can silently harvest data the user never approved. It fires
 `api_key` in the description stays finding-free. Composes with `TOOL_POISONING` (that check reads
 the *text*; this one measures the gap between *schema and text*). HIGH, CWE-213. Python (function
 signature) and JS/TS (`inputSchema`/Zod object) alike.
+
+**`TYPOSQUAT`** scans dependency manifests (`package.json`, `requirements.txt`, `pyproject.toml`)
+for a package name that is **confusably close to — but not exactly — a known popular MCP package**
+(`@modelcontextprotocol/*`, `mcp`, `fastmcp`, …). It compares only against a small **curated
+allowlist** (npm ↔ npm, PyPI ↔ PyPI), and fires only on a **double signal**: the name isn't an
+exact match *and* is within **Damerau-Levenshtein distance 1** (one edit *or* an adjacent
+transposition — `fatsmcp` → `fastmcp`). That tiny comparison surface keeps it FP-safe: ordinary
+deps (`express`, `requests`) are near nothing. MEDIUM, CWE-829. `pyproject.toml` needs `tomllib`
+(Python 3.11+); on 3.10 it degrades cleanly to `package.json` + `requirements.txt`.
 
 </details>
 
@@ -341,12 +351,11 @@ stateless `server/discover` with a fallback to the legacy `initialize` handshake
 
 ## Roadmap
 
-Beyond the six originally planned Tier-2 checks, `SCHEMA_DOCSTRING_MISMATCH` (Full-Schema-
-Poisoning, 8th static check) and `PROTOCOL_COMPLIANCE` (7th dynamic check) have landed.
-Next up (Tier 3, supply chain):
+Beyond the six originally planned Tier-2 checks, three more have landed:
+`SCHEMA_DOCSTRING_MISMATCH` (Full-Schema-Poisoning), `PROTOCOL_COMPLIANCE` (JSON-RPC), and
+`TYPOSQUAT` (dependency confusion). Next up (Tier 3, supply chain):
 
 - **`DEPENDENCY_SCAN`** — a thin wrapper around `osv-scanner`/`pip-audit`, not a reinvention.
-- **`TYPOSQUAT_CHECK`** — package name vs. known popular MCP servers (edit distance).
 - **`PACKAGE_PROVENANCE`** — npm provenance / signature check.
 
 ## Design principles
