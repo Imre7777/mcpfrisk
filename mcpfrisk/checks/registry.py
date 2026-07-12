@@ -12,6 +12,7 @@ from mcpfrisk.checks.dependency_scan import DependencyScanCheck
 from mcpfrisk.checks.false_error_escalation import FalseErrorEscalationCheck
 from mcpfrisk.checks.hardcoded_secrets import HardcodedSecretsCheck
 from mcpfrisk.checks.mcp_config_audit import McpConfigAuditCheck
+from mcpfrisk.checks.package_provenance import PackageProvenanceCheck
 from mcpfrisk.checks.path_traversal import PathTraversalCheck
 from mcpfrisk.checks.error_leakage import ErrorLeakageCheck
 from mcpfrisk.checks.protocol_compliance import ProtocolComplianceCheck
@@ -39,6 +40,7 @@ STATIC_CHECKS: list[type[BaseCheck]] = [
     TyposquatCheck,
     DependencyScanCheck,
     FalseErrorEscalationCheck,
+    PackageProvenanceCheck,
 ]
 
 # Tier-2-Checks (dynamisch, brauchen laufenden Server), ausgeführt via

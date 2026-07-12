@@ -8,7 +8,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12-blue)](https://www.python.org/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 [![Core deps](https://img.shields.io/badge/core%20deps-stdlib--only-success)](./pyproject.toml)
-[![Checks](https://img.shields.io/badge/checks-11%20static%20%2B%207%20dynamic-blueviolet)](#checks)
+[![Checks](https://img.shields.io/badge/checks-12%20static%20%2B%207%20dynamic-blueviolet)](#checks)
 [![OWASP MCP Top 10](https://img.shields.io/badge/OWASP-MCP%20Top%2010-informational)](https://owasp.org/www-project-mcp-top-10/)
 
 **A pre-deploy / CI security scanner for [MCP](https://modelcontextprotocol.io) server source code.**
@@ -27,11 +27,12 @@ Most MCP security tooling inspects **installed** servers at runtime, on the
 end user's machine. McpFrisk targets the **server author** and the **CI
 pipeline** — the last point where a vulnerability is cheap to fix.
 
-- 🔍 **Static (Tier 1) — 11 checks.** AST-based analysis for command injection,
+- 🔍 **Static (Tier 1) — 12 checks.** AST-based analysis for command injection,
   path traversal, hardcoded secrets, tool-description poisoning, tool-name
   collision/shadowing, risky MCP config files, rug-pull drift, schema/description
   mismatch, dependency typosquatting, known-vulnerable dependencies (osv-scanner),
-  and consent/escalation manipulation — for **Python *and* JS/TS**.
+  consent/escalation manipulation, and npm package signatures — for
+  **Python *and* JS/TS**.
 - 📡 **Dynamic (Tier 2) — 7 checks.** Probes a **running** server for auth-boundary
   bypass, SSRF, cross-tenant/RBAC leakage, schema-fuzzing crashes/leaks, error
   internals, rate-limiting/DoS, and JSON-RPC protocol compliance. Every finding is
@@ -231,6 +232,7 @@ the Security tab empty. Grant the job `permissions: { security-events: write }`.
 | `TYPOSQUAT` | Dependency name confusably close to a known MCP package | MCP04 | supply chain, CWE-829 |
 | `DEPENDENCY_SCAN` | Known-vulnerable dependency versions (CVEs) | MCP04 | wraps `osv-scanner` (optional) |
 | `FALSE_ERROR_ESCALATION` | Tool text that pushes the user/agent to escalate or disable safety | MCP01 | Confused Deputy, CWE-441 |
+| `PACKAGE_PROVENANCE` | npm deps with invalid/missing registry signatures | MCP04 | wraps `npm audit signatures` (optional) |
 
 <details>
 <summary>Details on the MCP-specific Tier-1 checks</summary>
@@ -305,6 +307,14 @@ about *tool* text), which also keeps a security tool's own docs from self-flaggi
 `TOOL_POISONING` (that check hunts exfiltration/secrecy text; this one hunts consent/escalation).
 MEDIUM.
 
+**`PACKAGE_PROVENANCE`** wraps **`npm audit signatures`** (same architecture as `DEPENDENCY_SCAN`):
+it verifies the registry signatures of the npm dependencies and reports an **invalid** signature
+(the artifact differs from what the registry signed — a tampering signal → HIGH, CWE-347) or a
+**missing** signature (LOW). It deliberately does **not** flag merely-missing *provenance
+attestations* — adoption is still low, so that would be noise, not signal. `npm` is not bundled;
+without it (or without a lockfile) the check is cleanly **skipped**, and a tool error surfaces as a
+transparent **INFO** finding. MCP04.
+
 </details>
 
 ### Tier 2 — dynamic (needs a running server)
@@ -374,13 +384,14 @@ stateless `server/discover` with a fallback to the legacy `initialize` handshake
 
 ## Roadmap
 
-Beyond the six originally planned Tier-2 checks, five more have landed:
+All originally planned checks have landed. Six extra ones went in beyond the initial roadmap:
 `SCHEMA_DOCSTRING_MISMATCH` (Full-Schema-Poisoning), `PROTOCOL_COMPLIANCE` (JSON-RPC),
-`TYPOSQUAT` (dependency confusion), `DEPENDENCY_SCAN` (CVEs via `osv-scanner`), and
-`FALSE_ERROR_ESCALATION` (Consent-Confused-Deputy). Still open:
+`TYPOSQUAT` (dependency confusion), `DEPENDENCY_SCAN` (CVEs via `osv-scanner`),
+`FALSE_ERROR_ESCALATION` (Consent-Confused-Deputy), and `PACKAGE_PROVENANCE` (npm signatures).
+What remains is the deliberately-last milestone:
 
-- **`PACKAGE_PROVENANCE`** — npm provenance / signature check (registry-backed).
-- **Public benchmark + release** — the deliberately-last milestone (see below).
+- **Public benchmark + release** — measured comparison vs. the field, then PyPI / public repo /
+  Marketplace (see below).
 
 ## Design principles
 
