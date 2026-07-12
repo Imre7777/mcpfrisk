@@ -8,7 +8,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12-blue)](https://www.python.org/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 [![Core deps](https://img.shields.io/badge/core%20deps-stdlib--only-success)](./pyproject.toml)
-[![Checks](https://img.shields.io/badge/checks-10%20static%20%2B%207%20dynamic-blueviolet)](#checks)
+[![Checks](https://img.shields.io/badge/checks-11%20static%20%2B%207%20dynamic-blueviolet)](#checks)
 [![OWASP MCP Top 10](https://img.shields.io/badge/OWASP-MCP%20Top%2010-informational)](https://owasp.org/www-project-mcp-top-10/)
 
 **A pre-deploy / CI security scanner for [MCP](https://modelcontextprotocol.io) server source code.**
@@ -27,11 +27,11 @@ Most MCP security tooling inspects **installed** servers at runtime, on the
 end user's machine. McpFrisk targets the **server author** and the **CI
 pipeline** — the last point where a vulnerability is cheap to fix.
 
-- 🔍 **Static (Tier 1) — 10 checks.** AST-based analysis for command injection,
+- 🔍 **Static (Tier 1) — 11 checks.** AST-based analysis for command injection,
   path traversal, hardcoded secrets, tool-description poisoning, tool-name
   collision/shadowing, risky MCP config files, rug-pull drift, schema/description
-  mismatch, dependency typosquatting, and known-vulnerable dependencies
-  (osv-scanner) — for **Python *and* JS/TS**.
+  mismatch, dependency typosquatting, known-vulnerable dependencies (osv-scanner),
+  and consent/escalation manipulation — for **Python *and* JS/TS**.
 - 📡 **Dynamic (Tier 2) — 7 checks.** Probes a **running** server for auth-boundary
   bypass, SSRF, cross-tenant/RBAC leakage, schema-fuzzing crashes/leaks, error
   internals, rate-limiting/DoS, and JSON-RPC protocol compliance. Every finding is
@@ -230,6 +230,7 @@ the Security tab empty. Grant the job `permissions: { security-events: write }`.
 | `SCHEMA_DOCSTRING_MISMATCH` | Sensitive input-schema param the description hides | MCP04 | Full-Schema-Poisoning, CWE-213 |
 | `TYPOSQUAT` | Dependency name confusably close to a known MCP package | MCP04 | supply chain, CWE-829 |
 | `DEPENDENCY_SCAN` | Known-vulnerable dependency versions (CVEs) | MCP04 | wraps `osv-scanner` (optional) |
+| `FALSE_ERROR_ESCALATION` | Tool text that pushes the user/agent to escalate or disable safety | MCP01 | Confused Deputy, CWE-441 |
 
 <details>
 <summary>Details on the MCP-specific Tier-1 checks</summary>
@@ -292,6 +293,17 @@ bundled** — install it separately (e.g. `brew install osv-scanner` or a releas
 `DEPENDENCY_SCAN` picks it up off the `PATH`. Without the tool the check is cleanly **skipped**
 (never a silent "clean"); a tool error surfaces as a single transparent **INFO** finding, never a
 crash. Severity is derived from each advisory's CVSS/label. MCP04.
+
+**`FALSE_ERROR_ESCALATION`** catches the **Consent-Confused-Deputy** attack: tool text (a
+description, error or return string) that pushes the agent or user to *lower a safety boundary* —
+"to continue, disable the confirmation prompt", "approve all requests", "re-run with sudo to grant
+admin access". The human/agent in the loop then escalates privileges or turns off a guard without
+knowing the real reason (CWE-441; the vector is injected text → MCP01). It fires only on a **double
+signal** — an escalation *verb* **and** a safety/consent *object* in a short window — so a plain
+"permission denied" never trips it. It only scans files that actually define tools (the attack is
+about *tool* text), which also keeps a security tool's own docs from self-flagging. Composes with
+`TOOL_POISONING` (that check hunts exfiltration/secrecy text; this one hunts consent/escalation).
+MEDIUM.
 
 </details>
 
@@ -362,12 +374,13 @@ stateless `server/discover` with a fallback to the legacy `initialize` handshake
 
 ## Roadmap
 
-Beyond the six originally planned Tier-2 checks, four more have landed:
+Beyond the six originally planned Tier-2 checks, five more have landed:
 `SCHEMA_DOCSTRING_MISMATCH` (Full-Schema-Poisoning), `PROTOCOL_COMPLIANCE` (JSON-RPC),
-`TYPOSQUAT` (dependency confusion), and `DEPENDENCY_SCAN` (CVEs via `osv-scanner`).
-Still open:
+`TYPOSQUAT` (dependency confusion), `DEPENDENCY_SCAN` (CVEs via `osv-scanner`), and
+`FALSE_ERROR_ESCALATION` (Consent-Confused-Deputy). Still open:
 
 - **`PACKAGE_PROVENANCE`** — npm provenance / signature check (registry-backed).
+- **Public benchmark + release** — the deliberately-last milestone (see below).
 
 ## Design principles
 

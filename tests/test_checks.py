@@ -342,6 +342,7 @@ class TestFullScanIntegration:
             "TOOL_POISONING",
             "TOOL_NAME_COLLISION",
             "SCHEMA_DOCSTRING_MISMATCH",
+            "FALSE_ERROR_ESCALATION",
         }
 
     def test_skip_checks_parameter_works(self, tmp_path):
