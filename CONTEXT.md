@@ -48,7 +48,7 @@ laufende Server macht). `mcpfrisk` war zum Zeitpunkt der Recherche frei.
 
 ## 2. Aktueller Stand (was funktioniert bereits)
 
-9 statische Checks sind implementiert, getestet und funktionieren:
+10 statische Checks sind implementiert, getestet und funktionieren:
 
 | Check ID | Datei | Was wird erkannt | OWASP MCP Top 10 | CWE |
 |---|---|---|---|---|
@@ -61,8 +61,9 @@ laufende Server macht). `mcpfrisk` war zum Zeitpunkt der Recherche frei.
 | `TOOL_DESCRIPTION_DRIFT` | `checks/tool_description_drift.py` | Rug-Pull: Tool-Beschreibung geändert (MEDIUM) / neues ungepinntes Tool (LOW) gegenüber gepinntem Baseline `.mcpfrisk-tools.json`. OPT-IN (`scan --write-tools-baseline`). Feature `015-tool-description-drift` | MCP04 | CWE-471 |
 | `SCHEMA_DOCSTRING_MISMATCH` | `checks/schema_docstring_mismatch.py` | Full-Schema-Poisoning: Tool fordert über sein Input-Schema einen sensibel benannten Parameter (api_key/token/ssh_key/…) an, den die Beschreibung nicht offenlegt (HIGH). Doppeltes Signal (sensibel UND undokumentiert). Nutzt neue Port-Fähigkeit `ToolDefinition.parameters`. Feature `016-schema-docstring-mismatch` | MCP04 | CWE-213 |
 | `TYPOSQUAT` | `checks/typosquat.py` | Dependency-Manifest (package.json/requirements.txt/pyproject.toml) mit Paketname, der einem bekannten MCP-Paket verwechselbar ähnlich, aber ≠ ist (MEDIUM). Kuratierte Allowlist + Damerau-Distanz ≤ 1, ökosystem-getrennt. Distanz-Helfer in `checks/_name_similarity.py`. Feature `018-typosquat-check` | MCP04 | CWE-829 |
+| `DEPENDENCY_SCAN` | `checks/dependency_scan.py` | Wrapper um `osv-scanner` (kein CVE-DB-Nachbau): meldet bekannte verwundbare Dependency-Versionen. Tool-Runner injizierbar (DI), Severity aus CVSS/Label. osv-scanner NICHT gebündelt → fehlt es, `applies_to` False (skipped); Tool-Fehler → INFO. `run()` wirft nie. Feature `019-dependency-scan` | MCP04 | (CVE/OSV-ID) |
 
-Alle neun sind in `mcpfrisk/checks/registry.py` registriert. **`MCP_CONFIG_AUDIT`
+Alle zehn sind in `mcpfrisk/checks/registry.py` registriert. **`MCP_CONFIG_AUDIT`
 und `TOOL_DESCRIPTION_DRIFT` sind opt-in/kontextabhängig** (`applies_to`): der
 erste greift nur bei vorhandener MCP-Config, der zweite nur bei gepinntem
 `.mcpfrisk-tools.json` -- sonst „skipped" (kein Fehler, kein FP). **Besonderheit
@@ -108,6 +109,7 @@ mcpfrisk/
 │   ├── schema_docstring_mismatch.py  # Tier 1: SCHEMA_DOCSTRING_MISMATCH (Full-Schema-Poisoning, Feature 016)
 │   ├── typosquat.py        # Tier 1: TYPOSQUAT (Dependency-Confusion, Feature 018)
 │   ├── _name_similarity.py # geteilter Nicht-Check-Helfer: Damerau-Distanz (Feature 018)
+│   ├── dependency_scan.py  # Tier 1: DEPENDENCY_SCAN (osv-scanner-Wrapper, Feature 019)
 │   ├── auth_boundary.py    # Tier 2: AUTH_BOUNDARY
 │   ├── ssrf_check.py        # Tier 2: SSRF_CHECK (out-of-band Callback)
 │   ├── _ssrf_callback.py    # Loopback-Callback-Listener für SSRF_CHECK (geteilter Nicht-Check-Helfer)
