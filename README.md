@@ -8,7 +8,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12-blue)](https://www.python.org/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 [![Core deps](https://img.shields.io/badge/core%20deps-stdlib--only-success)](./pyproject.toml)
-[![Checks](https://img.shields.io/badge/checks-8%20static%20%2B%206%20dynamic-blueviolet)](#checks)
+[![Checks](https://img.shields.io/badge/checks-8%20static%20%2B%207%20dynamic-blueviolet)](#checks)
 [![OWASP MCP Top 10](https://img.shields.io/badge/OWASP-MCP%20Top%2010-informational)](https://owasp.org/www-project-mcp-top-10/)
 
 **A pre-deploy / CI security scanner for [MCP](https://modelcontextprotocol.io) server source code.**
@@ -31,10 +31,11 @@ pipeline** — the last point where a vulnerability is cheap to fix.
   path traversal, hardcoded secrets, tool-description poisoning, tool-name
   collision/shadowing, risky MCP config files, rug-pull drift, and
   schema/description mismatch — for **Python *and* JS/TS**.
-- 📡 **Dynamic (Tier 2) — 6 checks.** Probes a **running** server for auth-boundary
+- 📡 **Dynamic (Tier 2) — 7 checks.** Probes a **running** server for auth-boundary
   bypass, SSRF, cross-tenant/RBAC leakage, schema-fuzzing crashes/leaks, error
-  internals, and rate-limiting/DoS. Every finding is **evidence-grounded** —
-  proven by an out-of-band callback or a liveness recheck, never a guess.
+  internals, rate-limiting/DoS, and JSON-RPC protocol compliance. Every finding is
+  **evidence-grounded** — proven by an out-of-band callback or a liveness recheck,
+  never a guess.
 - 📦 **Stdlib-only core.** The base install ships **zero external dependencies** —
   small attack surface, trivial to vet and install. JS/TS parsing is an opt-in extra.
 - 🧱 **Hardened against the server it tests.** Bounded response sizes, one check
@@ -296,6 +297,7 @@ mcpfrisk probe --server http://localhost:8000/mcp \
 | `SCHEMA_FUZZING` | Crash / internals leak under malformed input | liveness recheck fails / stacktrace | MCP05 / CWE-20 |
 | `ERROR_LEAKAGE` | Internals leaked on schema-valid error triggers | traceback / SQL / abs-path marker | MCP08 / CWE-209 |
 | `RATE_LIMITING` | Unbounded consumption / no throttle | latency blow-up / crash proof | CWE-400/770 |
+| `PROTOCOL_COMPLIANCE` | Fail-open / wrong JSON-RPC error on unknown method | error code vs. spec (-32601) | CWE-703 |
 
 > ⚠️ `--stdio` **runs the given command** (code execution). Only point it at servers you
 > trust or are actively testing. An unreachable / timing-out / non-startable server is
@@ -325,6 +327,12 @@ mcpfrisk probe --server http://localhost:8000/mcp \
   tool; only hard signals count — an explicit 429/throttle passes, a liveness failure proves
   a crash (HIGH), a latency blow-up past a defined multiple with no throttle proves unbounded
   consumption (MEDIUM). Carries no OWASP ref — none of the ten categories covers DoS.
+- **`PROTOCOL_COMPLIANCE`** sends one guaranteed-unknown JSON-RPC method and checks the reply
+  against JSON-RPC 2.0: a server that answers with a `result` instead of an error (fail-open,
+  so an agent can't tell the call failed) is MEDIUM (CWE-703); a wrong error code (not -32601),
+  a malformed error object, or a missing `"jsonrpc":"2.0"` envelope is LOW. Read-only (never
+  calls a tool); only the unambiguous *method-not-found* semantics are checked. Carries no
+  OWASP ref — the MCP Top 10 has no protocol-conformance category.
 
 All Tier-2 checks are stdlib-only and negotiate the protocol era automatically (modern
 stateless `server/discover` with a fallback to the legacy `initialize` handshake).
@@ -333,14 +341,13 @@ stateless `server/discover` with a fallback to the legacy `initialize` handshake
 
 ## Roadmap
 
-**Tier 2 fully delivered** — all six originally planned dynamic checks are implemented, and
-`SCHEMA_DOCSTRING_MISMATCH` (Full-Schema-Poisoning) has landed as the 8th static check.
-Next up (Tier 3, supply chain & spec compliance):
+Beyond the six originally planned Tier-2 checks, `SCHEMA_DOCSTRING_MISMATCH` (Full-Schema-
+Poisoning, 8th static check) and `PROTOCOL_COMPLIANCE` (7th dynamic check) have landed.
+Next up (Tier 3, supply chain):
 
 - **`DEPENDENCY_SCAN`** — a thin wrapper around `osv-scanner`/`pip-audit`, not a reinvention.
 - **`TYPOSQUAT_CHECK`** — package name vs. known popular MCP servers (edit distance).
 - **`PACKAGE_PROVENANCE`** — npm provenance / signature check.
-- **`PROTOCOL_COMPLIANCE`** — correct JSON-RPC error codes and MCP spec-version checks.
 
 ## Design principles
 

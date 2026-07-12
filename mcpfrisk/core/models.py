@@ -303,6 +303,40 @@ class RateLimitProbe:
         }
 
 
+class ProtocolProbeClass(str, Enum):
+    """Welche JSON-RPC-2.0-Abweichung eine PROTOCOL_COMPLIANCE-Probe belegt --
+    also *was* auf eine garantiert unbekannte Methode beobachtet wurde. Bewusst
+    OHNE eine eigene 'konform'-Klasse -- das ist der ENFORCED-Fall (kein Finding,
+    keine eigene Klasse nötig)."""
+
+    MISSING_ERROR = "missing_error"          # kein error-Objekt (fail-open) -> MEDIUM
+    WRONG_ERROR_CODE = "wrong_error_code"    # error.code != -32601 -> LOW
+    MALFORMED_ERROR = "malformed_error"      # error ohne int-code / ohne str-message -> LOW
+    MALFORMED_ENVELOPE = "malformed_envelope"  # Antwort ohne "jsonrpc": "2.0" -> LOW
+
+
+@dataclass
+class ProtocolProbe:
+    """Ein einzelner Protokoll-Konformitäts-Versuch (eine unbekannte JSON-RPC-
+    Methode). Strukturkompatibel zu den anderen Tier-2-Proben (besitzt `outcome`
+    + `to_dict()`), damit BoundaryResult alle Probe-Arten ohne Sonderfall
+    aggregiert. NOT_ENFORCED entsteht nur bei einer konkreten, belegten
+    Spec-Abweichung (Prinzip V)."""
+
+    method: str
+    probe_class: ProtocolProbeClass
+    outcome: BoundaryOutcome
+    observed: str  # kurze, secret-bereinigte Zusammenfassung der Antwort (Prinzip V)
+
+    def to_dict(self) -> dict:
+        return {
+            "method": self.method,
+            "probe_class": self.probe_class.value,
+            "outcome": self.outcome.value,
+            "observed": self.observed,
+        }
+
+
 @runtime_checkable
 class DynamicProbe(Protocol):
     """Gemeinsames Minimal-Interface aller Tier-2-Proben (AuthProbe, UrlFetchProbe):

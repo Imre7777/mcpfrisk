@@ -112,7 +112,8 @@ mcpfrisk/
 │   ├── rbac_cross_tenant.py # Tier 2: RBAC_CROSS_TENANT (A/B-Identitäten, Fingerprint-Beleg)
 │   ├── schema_fuzzing.py    # Tier 2: SCHEMA_FUZZING
 │   ├── error_leakage.py     # Tier 2: ERROR_LEAKAGE
-│   └── rate_limiting.py     # Tier 2: RATE_LIMITING
+│   ├── rate_limiting.py     # Tier 2: RATE_LIMITING
+│   └── protocol_compliance.py  # Tier 2: PROTOCOL_COMPLIANCE (JSON-RPC-Fehlersemantik, Feature 017)
 ├── core/
 │   ├── baseline.py         # Findings-Baseline-/Diff-Scanning (Fingerprint, Feature 010)
 │   ├── tool_baseline.py    # Tool-Beschreibungs-Baseline für Rug-Pull-Drift (Feature 015)
@@ -422,6 +423,18 @@ Priorisiert nach Recherche-Relevanz:
    `RBAC_CROSS_TENANT`, `SCHEMA_FUZZING`, `ERROR_LEAKAGE`, `RATE_LIMITING`)
    sind implementiert, getestet und registriert. Weitere Arbeit siehe
    Tier 3 (Supply-Chain & Spec-Compliance) unten.
+
+7. **`PROTOCOL_COMPLIANCE`** ✅ **ERLEDIGT** (Spec `017-protocol-compliance`) —
+   sendet EINE garantiert unbekannte JSON-RPC-Methode und prüft die Antwort
+   gegen JSON-RPC 2.0: kein `error`-Objekt (fail-open, Agent merkt den
+   Fehlschlag nicht) → MEDIUM (CWE-703); falscher Code (≠ -32601), malformtes
+   Fehler-Objekt oder fehlendes `"jsonrpc":"2.0"`-Envelope → LOW. Nur die
+   eindeutige Method-not-found-Semantik (FP-Disziplin; andere Fehlerpfade sind
+   gegen MCP-`isError`-Tool-Results mehrdeutig). Bewusst **kein** `owasp_mcp_ref`.
+   Read-only (ruft nie ein Tool). Brauchte eine additive Transport-Port-
+   Erweiterung `call_response()` (volle JSON-RPC-Antwort inkl. `error`); `call()`
+   bleibt byte-gleich (`= extract_jsonrpc_result(call_response(...))`), Regression
+   der fünf bestehenden dynamischen Checks per voller Suite belegt. stdlib-only.
 
 ### Tier 3 — Supply-Chain & Spec-Compliance
 

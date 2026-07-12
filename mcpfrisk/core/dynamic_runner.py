@@ -78,6 +78,32 @@ def extract_jsonrpc_result(payload: object) -> dict:
     return result if isinstance(result, dict) else {}
 
 
+def parse_jsonrpc_payload(raw: bytes) -> dict:
+    """Parst eine JSON- ODER SSE-Antwort zur VOLLEN JSON-RPC-Payload (mit `result`
+    UND `error`, `id`, `jsonrpc`).
+
+    HTTP-MCP-Server antworten teils als text/event-stream (Zeilen mit
+    'data: {...}') -- beide Formen werden best-effort geparst. Nicht-Objekt/leer
+    -> {}. Basis für `call_response()`; `extract_jsonrpc_result` liefert davon
+    nur das `result`-Feld (Rückwärtskompatibilität für `call()`)."""
+    text = raw.decode("utf-8", errors="replace").strip()
+    if not text:
+        return {}
+    payload: object = None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("data:"):
+                try:
+                    payload = json.loads(line[len("data:"):].strip())
+                    break
+                except json.JSONDecodeError:
+                    continue
+    return payload if isinstance(payload, dict) else {}
+
+
 class Transport(Protocol):
     """Port: was ein dynamischer Check von einem laufenden Server braucht."""
 
@@ -87,6 +113,14 @@ class Transport(Protocol):
     def probe(self, operation: str, condition: CredentialCondition) -> AuthProbe: ...
 
     def call(
+        self,
+        method: str,
+        params: dict | None = None,
+        timeout_s: float | None = None,
+        identity: str | None = None,
+    ) -> dict: ...
+
+    def call_response(
         self,
         method: str,
         params: dict | None = None,
@@ -181,6 +215,20 @@ class HttpTransport:
         """Generischer JSON-RPC-Aufruf über HTTP (z.B. tools/list, tools/call).
         Liefert das geparste `result`-Objekt; wirft bei Transportfehlern eine
         DynamicTransportError (der aufrufende Check macht daraus INCONCLUSIVE)."""
+        return extract_jsonrpc_result(self.call_response(method, params, timeout_s, identity))
+
+    def call_response(
+        self,
+        method: str,
+        params: dict | None = None,
+        timeout_s: float | None = None,
+        identity: str | None = None,
+    ) -> dict:
+        """Wie `call()`, liefert aber die VOLLE JSON-RPC-Antwort (mit `error`,
+        `id`, `jsonrpc`) statt nur `result` -- für Checks, die die Fehlersemantik
+        prüfen (PROTOCOL_COMPLIANCE). Ein HTTP-4xx/5xx mit lesbarem Body wird als
+        JSON-RPC-Antwort geparst, nicht als Transportfehler; nur echte
+        Verbindungs-/Timeout-/Größenfehler werfen DynamicTransportError."""
         timeout = timeout_s if timeout_s is not None else self.timeout_s
         body = json.dumps(
             {"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}
@@ -202,7 +250,7 @@ class HttpTransport:
             reason = getattr(exc, "reason", exc)
             raise DynamicTransportError(f"{type(exc).__name__} ({reason})") from exc
 
-        return self._parse_jsonrpc_result(raw)
+        return parse_jsonrpc_payload(raw)
 
     @staticmethod
     def _read_bounded(response) -> bytes:
@@ -213,29 +261,6 @@ class HttpTransport:
                 "abgebrochen (Schutz vor Memory-Exhaustion durch den Zielserver)"
             )
         return raw
-
-    @staticmethod
-    def _parse_jsonrpc_result(raw: bytes) -> dict:
-        """Extrahiert das `result`-Objekt aus einer JSON- oder SSE-Antwort.
-
-        HTTP-MCP-Server antworten teils als text/event-stream (Zeilen mit
-        'data: {...}'). Wir parsen beide Formen best-effort."""
-        text = raw.decode("utf-8", errors="replace").strip()
-        if not text:
-            return {}
-        payload: object = None
-        try:
-            payload = json.loads(text)
-        except json.JSONDecodeError:
-            for line in text.splitlines():
-                line = line.strip()
-                if line.startswith("data:"):
-                    try:
-                        payload = json.loads(line[len("data:"):].strip())
-                        break
-                    except json.JSONDecodeError:
-                        continue
-        return extract_jsonrpc_result(payload)
 
     def close(self) -> None:
         return None
@@ -300,6 +325,17 @@ class DynamicSession:
         identity: str | None = None,
     ) -> dict:
         return self._transport.call(method, params, timeout_s, identity)
+
+    def call_response(
+        self,
+        method: str,
+        params: dict | None = None,
+        timeout_s: float | None = None,
+        identity: str | None = None,
+    ) -> dict:
+        """Wie `call()`, liefert aber die VOLLE JSON-RPC-Antwort (inkl. `error`)
+        -- für Checks, die die Fehlersemantik prüfen (PROTOCOL_COMPLIANCE)."""
+        return self._transport.call_response(method, params, timeout_s, identity)
 
     def close(self) -> None:
         self._transport.close()

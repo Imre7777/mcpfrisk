@@ -361,13 +361,25 @@ class StdioTransport:
         timeout_s: float | None = None,
         identity: str | None = None,
     ) -> dict:
+        return extract_jsonrpc_result(self.call_response(method, params, timeout_s, identity))
+
+    def call_response(
+        self,
+        method: str,
+        params: dict | None = None,
+        timeout_s: float | None = None,
+        identity: str | None = None,
+    ) -> dict:
+        """Wie `call()`, liefert aber die VOLLE JSON-RPC-Payload (inkl. `error`,
+        `id`, `jsonrpc`) statt nur `result`. Der Handle liefert ohnehin das
+        vollständige Payload -- `call()` wrappt es nur mit extract_jsonrpc_result
+        (Rückwärtskompatibilität). Für PROTOCOL_COMPLIANCE (Feature 017)."""
         channel = self._channel(identity)
         channel.ensure_negotiated(timeout_s)
         request_params = dict(params or {})
         if channel.era == "modern":
             request_params["_meta"] = _client_meta()
-        payload = channel.handle.request(method, request_params, timeout_s=timeout_s)
-        return extract_jsonrpc_result(payload)
+        return channel.handle.request(method, request_params, timeout_s=timeout_s)
 
     def close(self) -> None:
         for channel in self._channels.values():

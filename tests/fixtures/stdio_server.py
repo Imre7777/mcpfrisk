@@ -31,6 +31,10 @@ Achsen (Prinzip VI -- paired fixtures, beide Protokoll-Ären):
                        nie eine Drosselung, nie ein Absturz.
   --mode crash      : ab der Schwelle eine ungefangene Exception -> Prozess stirbt.
   --mode fast       : immer schnell, nie Drosselung/Absturz (sauberer Fall).
+- --toolset protocol: PROTOCOL_COMPLIANCE-Fixture -- jede unbekannte Top-Level-
+  Methode ist der Trigger. --mode compliant : korrekter -32601-Fehler.
+  --mode fail_open : nur ein result, kein error (fail-open). --mode wrong_code :
+  error mit falschem Code (-32000).
 - --mode vulnerable (toolset fetch) : tools/call holt JEDE URL (Callback-Listener wird getroffen).
 - --mode clean      (toolset fetch) : tools/call lehnt Loopback/RFC1918/Link-Local/Nicht-HTTP ab.
 - --mode silent     : antwortet nie (für den Timeout-/Lifecycle-Test).
@@ -252,6 +256,16 @@ def _handle(method: str, rid: object, req: dict, era: str, mode: str, toolset: s
             "serverInfo": _SERVER_INFO,
         })
         return
+    if toolset == "protocol":
+        # Jede sonstige (unbekannte) Top-Level-Methode ist der Trigger von
+        # PROTOCOL_COMPLIANCE. Der Modus bestimmt die JSON-RPC-Fehlersemantik.
+        if mode == "compliant":
+            _error(rid, -32601, "Method not found")
+        elif mode == "wrong_code":
+            _error(rid, -32000, "unknown method")
+        else:  # fail_open (kein error, nur ein result)
+            _result(rid, {})
+        return
     if toolset == "errors":
         if method == "tools/list":
             _result(rid, {"tools": [_GET_ITEM_TOOL]})
@@ -309,10 +323,15 @@ def main() -> int:
     )
     parser.add_argument(
         "--mode",
-        choices=["vulnerable", "clean", "silent", "throttled", "degrading", "crash", "fast"],
+        choices=[
+            "vulnerable", "clean", "silent", "throttled", "degrading", "crash", "fast",
+            "compliant", "fail_open", "wrong_code",
+        ],
         default="vulnerable",
     )
-    parser.add_argument("--toolset", choices=["fetch", "fuzz", "errors", "burst"], default="fetch")
+    parser.add_argument(
+        "--toolset", choices=["fetch", "fuzz", "errors", "burst", "protocol"], default="fetch"
+    )
     parser.add_argument("--banner", action="store_true")
     args = parser.parse_args()
 
