@@ -30,10 +30,27 @@ from mcpfrisk.core.sourcetree import jsts_available
 _JSTS_SUFFIXES = {".js", ".mjs", ".cjs", ".jsx", ".ts", ".mts", ".cts", ".tsx"}
 
 
+def _version() -> str:
+    """Installierte Paket-Version (für --version und Bug-Reports)."""
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+
+        try:
+            return version("mcpfrisk")
+        except PackageNotFoundError:
+            return "0+unknown"
+    except Exception:  # noqa: BLE001 - Version darf nie den Start verhindern
+        return "0+unknown"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mcpfrisk",
         description="Security Scanner für MCP-Server -- läuft vor dem Deploy, nicht beim Endnutzer.",
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"mcpfrisk {_version()}",
+        help="Zeigt die installierte McpFrisk-Version und beendet.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 

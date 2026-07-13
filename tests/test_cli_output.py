@@ -52,3 +52,22 @@ def test_dynamic_report_success_message_names_the_actual_check(capsys):
     out = capsys.readouterr().out
     assert "SSRF_CHECK" in out
     assert "AUTH_BOUNDARY" not in out
+
+
+def test_version_flag_prints_and_exits_zero(capsys):
+    """--version funktioniert trotz required subparser (argparse-Quirk) und nennt
+    die installierte Version -- wichtig für belastbare Bug-Reports."""
+    import pytest
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["--version"])
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert out.startswith("mcpfrisk ")
+
+
+def test_nonexistent_path_exits_nonzero(tmp_path, capsys):
+    """Ein nicht existierender Scan-Pfad MUSS mit != 0 enden (CI-Gate darf einen
+    Tippfehler im Pfad nicht als Pass durchwinken)."""
+    missing = tmp_path / "does-not-exist"
+    assert cli.main(["scan", str(missing)]) == 2
