@@ -7,13 +7,15 @@ genutzt.
 
 `damerau_le_1` beantwortet die eng gefasste Frage „ist die Damerau-Levenshtein-
 Distanz höchstens 1?" (eine Ersetzung/Einfügung/Löschung ODER eine Vertauschung
-zweier benachbarter Zeichen) -- der Sweet-Spot für Typosquatting-Erkennung. Für
-die reine ≤1-Frage genügt ein linearer Vergleich statt der vollen DP-Matrix.
+zweier benachbarter Zeichen) -- der Sweet-Spot für Typosquatting-Erkennung.
+`levenshtein_le_1` ist die Variante ohne Vertauschung (von TOOL_NAME_COLLISION
+für Near-Duplicate-Namen genutzt). Für die reine ≤1-Frage genügt jeweils ein
+linearer Vergleich statt der vollen DP-Matrix.
 """
 from __future__ import annotations
 
 
-def _levenshtein_le_1(a: str, b: str) -> bool:
+def levenshtein_le_1(a: str, b: str) -> bool:
     """True, wenn die Levenshtein-Distanz zwischen a und b höchstens 1 ist
     (0 = gleich, 1 = eine Ersetzung/Einfügung/Löschung)."""
     if a == b:
@@ -45,7 +47,7 @@ def damerau_le_1(a: str, b: str) -> bool:
 
     Die Adjazenz-Vertauschung ist ein klassischer Tippfehler (`fastmcp` ->
     `fatsmcp`), den reine Levenshtein-≤1 als Distanz 2 verfehlt."""
-    if _levenshtein_le_1(a, b):
+    if levenshtein_le_1(a, b):
         return True
     if len(a) == len(b):
         diffs = [i for i in range(len(a)) if a[i] != b[i]]

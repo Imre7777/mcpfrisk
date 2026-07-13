@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from mcpfrisk.checks._name_similarity import levenshtein_le_1
 from mcpfrisk.core.base_check import BaseCheck
 from mcpfrisk.core.fs import iter_source_files
 from mcpfrisk.core.models import Finding, Severity
@@ -33,33 +34,6 @@ _MIN_NEAR_DUP_LEN = 3
 # Präfix-Beziehung gilt nur als near-duplicate, wenn der Rest kurz ist
 # (z.B. Plural-"s": get_item / get_items) -- nicht bei get / get_user_profile.
 _MAX_PREFIX_TAIL = 2
-
-
-def _edit_distance_le_1(a: str, b: str) -> bool:
-    """True, wenn die Levenshtein-Distanz zwischen a und b höchstens 1 ist.
-    Eigene stdlib-Implementierung (kein python-Levenshtein) -- für die reine
-    <=1-Frage genügt ein linearer Vergleich statt der vollen DP-Matrix."""
-    if a == b:
-        return True
-    la, lb = len(a), len(b)
-    if abs(la - lb) > 1:
-        return False
-    if la == lb:  # genau eine Substitution erlaubt
-        return sum(x != y for x, y in zip(a, b)) == 1
-    # Längen unterscheiden sich um 1 -> genau eine Einfügung/Löschung erlaubt.
-    shorter, longer = (a, b) if la < lb else (b, a)
-    i = j = 0
-    edited = False
-    while i < len(shorter) and j < len(longer):
-        if shorter[i] == longer[j]:
-            i += 1
-            j += 1
-        else:
-            if edited:
-                return False
-            edited = True
-            j += 1  # ein Zeichen in `longer` überspringen (= Einfügung)
-    return True
 
 
 def _normalize(name: str) -> str:
@@ -77,7 +51,7 @@ def _is_near_duplicate(a: str, b: str) -> bool:
     if _normalize(a) == _normalize(b):
         return True
     # (b) Edit-Distanz 1 auf den Rohnamen.
-    if _edit_distance_le_1(a, b):
+    if levenshtein_le_1(a, b):
         return True
     # (c) Präfix-Beziehung mit kurzem Rest (z.B. Plural-"s").
     shorter, longer = (a, b) if len(a) < len(b) else (b, a)

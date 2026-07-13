@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from mcpfrisk.checks._name_similarity import damerau_le_1
+from mcpfrisk.checks._name_similarity import damerau_le_1, levenshtein_le_1
 from mcpfrisk.checks.typosquat import TyposquatCheck
 from mcpfrisk.core.models import Severity
 
@@ -52,6 +52,26 @@ class TestDamerau:
 
     def test_far_apart_is_false(self):
         assert not damerau_le_1("fastmcp", "requests")
+
+
+class TestLevenshtein:
+    """Der geteilte Nicht-Check-Helfer, genutzt von TOOL_NAME_COLLISION (Review 2026-07)."""
+
+    def test_equal(self):
+        assert levenshtein_le_1("send_mail", "send_mail")
+
+    def test_one_substitution(self):
+        assert levenshtein_le_1("send_mail", "send_mall")
+
+    def test_one_insertion(self):
+        assert levenshtein_le_1("get_item", "get_items")
+
+    def test_transposition_is_not_levenshtein_1(self):
+        # Vertauschung = Damerau-1, aber Levenshtein-2 -> hier False.
+        assert not levenshtein_le_1("fastmcp", "fatsmcp")
+
+    def test_distance_two_is_false(self):
+        assert not levenshtein_le_1("get_item", "get_orders")
 
 
 # --------------------------------------------------------------------------
