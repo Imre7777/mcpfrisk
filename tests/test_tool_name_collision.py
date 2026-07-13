@@ -108,6 +108,43 @@ class TestExactDuplicateJsTs:
         assert findings == []
 
 
+class TestLowLevelSdkHandlersAreNotTools:
+    """Regression (externer Benchmark 2026-07): die Low-Level-MCP-SDK-Handler
+    @server.list_tools()/@server.call_tool() sind KEINE Tool-Definitionen -- sie
+    enthalten nur zufällig den Substring 'tool'. Der frühere Substring-Match
+    flaggte sie (und ihre gleichnamigen Vorkommen über mehrere Server hinweg)
+    fälschlich als Tool-Namens-Kollision."""
+
+    def test_list_call_tool_handlers_do_not_collide(self, tmp_path):
+        src = (
+            "from mcp.server import Server\n"
+            "server = Server('x')\n"
+            "@server.list_tools()\n"
+            "async def list_tools():\n"
+            "    return []\n"
+            "@server.call_tool()\n"
+            "async def call_tool(name, arguments):\n"
+            "    return []\n"
+        )
+        (tmp_path / "a.py").write_text(src, encoding="utf-8")
+        (tmp_path / "b.py").write_text(src, encoding="utf-8")  # zweiter Server, gleiche Handler
+        assert ToolNameCollisionCheck().run(tmp_path) == []
+
+    def test_real_fastmcp_tool_still_detected(self, tmp_path):
+        # Gegenprobe: echte @mcp.tool()-Duplikate werden weiterhin erkannt.
+        (tmp_path / "s.py").write_text(
+            "from fastmcp import FastMCP\n"
+            "mcp = FastMCP('x')\n"
+            "@mcp.tool()\n"
+            "def dup(a): return a\n"
+            "@mcp.tool()\n"
+            "def dup(a): return a\n",
+            encoding="utf-8",
+        )
+        findings = ToolNameCollisionCheck().run(tmp_path)
+        assert any(f.severity == Severity.MEDIUM for f in findings)
+
+
 class TestExistingFixturesStayCollisionFree:
     """Regression: die bestehenden vulnerable/clean-Server dürfen KEINE
     TOOL_NAME_COLLISION-Findings erzeugen (sie haben keine Kollisionen)."""

@@ -243,9 +243,22 @@ class PythonSourceModel(SourceModel):
         names = [p.arg for p in a.posonlyargs + a.args + a.kwonlyargs]
         return [n for n in names if n not in _INJECTED_PARAMS]
 
-    @staticmethod
-    def _looks_like_tool(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-        return any("tool" in ast.dump(d).lower() for d in node.decorator_list)
+    @classmethod
+    def _looks_like_tool(cls, node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+        """True nur bei einem echten Tool-Dekorator: @mcp.tool / @mcp.tool(...) /
+        @app.tool(...) bzw. bare @tool -- der Callee ist `tool` oder endet auf
+        `.tool`. Bewusst NICHT der frühere Substring-Match „tool", der auch die
+        Low-Level-MCP-SDK-Handler @server.list_tools()/@server.call_tool()
+        erfasste (die enthalten „tool" nur zufällig, sind aber KEINE Tool-
+        Definitionen) -- eine reale FP-Quelle auf Servern mit der Low-Level-
+        `Server`-API (extern-Benchmark 2026-07). Konsistent mit dem JS-Adapter,
+        der `.tool`/`.registerTool` schon präzise prüft."""
+        for d in node.decorator_list:
+            target = d.func if isinstance(d, ast.Call) else d
+            name = cls._callee_name(target)
+            if name == "tool" or name.endswith(".tool"):
+                return True
+        return False
 
     @staticmethod
     def _decorator_description(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
