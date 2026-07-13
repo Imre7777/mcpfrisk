@@ -1,4 +1,20 @@
 {
+  "provenance": {
+    "generated_at_utc": "2026-07-13T15:20:32Z",
+    "git_commit": "92756c38d756e20a04af31c7862270bc14e6f342",
+    "git_commit_short": "92756c3",
+    "git_branch": "benchmark-provenance-2026-07",
+    "git_working_tree_clean": true,
+    "mcpfrisk_version": "0.1.0",
+    "python_version": "3.13.3",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "jsts_available": true
+  },
+  "scanners_available": {
+    "McpFrisk": true,
+    "Semgrep": false,
+    "agent-audit": false
+  },
   "jsts_available": true,
   "overall": {
     "tp": 11,
