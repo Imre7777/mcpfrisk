@@ -11,6 +11,18 @@ python -m benchmark.run        # from the repo root
 
 Latest committed results: [`RESULTS.md`](./RESULTS.md).
 
+## Traceability
+
+Every generated report is **self-describing**: `RESULTS.md` and `results.json`
+record a **provenance** block — the exact **git commit** the run was produced
+from, whether the **working tree was clean** at run time (a dirty tree means the
+commit alone doesn't fully pin the code), the UTC timestamp, the McpFrisk
+version, the Python/platform, and which scanners were available. To reproduce any
+committed result: check out that commit with a clean tree, `pip install -e
+".[dev,jsts]"`, and run `python -m benchmark.run`. Because both the corpus and the
+results are committed to git, every past result stays reconstructable from
+history at any time.
+
 ## What it measures
 
 Two metrics, deliberately kept separate:
