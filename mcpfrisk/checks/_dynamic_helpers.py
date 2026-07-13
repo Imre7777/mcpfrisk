@@ -37,7 +37,19 @@ _TRACEBACK_RE = re.compile(r"Traceback \(most recent call last\)")
 _PY_FRAME_RE = re.compile(r'File "[^"]+", line \d+')
 _JS_FRAME_RE = re.compile(r"at (?:Object\.<anonymous>|[\w.$]+ \()")
 _WIN_PATH_RE = re.compile(r"[A-Za-z]:\\(?:[^\s\"'\\]+\\)+[^\s\"'\\]+")
-_UNIX_PATH_RE = re.compile(r"(?:/[\w.\-]+){2,}")
+# Absoluter Dateisystem-Pfad als Leak-Marker -- bewusst NICHT jeder `/a/b`-Pfad
+# (das flaggte harmlose URL-Routen wie `/api/v1/users` in Fehlermeldungen als
+# vermeintliches Interna-Leak -> FP, Review 2026-07). Nur ein Pfad unter einem
+# bekannten System-/App-Root ODER einer, der auf eine Quell-/Config-Dateiendung
+# endet, gilt als geleakter interner Pfad (Traceback-Frames deckt _PY_FRAME_RE
+# ohnehin separat ab).
+_UNIX_PATH_RE = re.compile(
+    r"/(?:etc|usr|var|home|root|tmp|opt|bin|sbin|lib|lib64|proc|sys|mnt|srv|dev|"
+    r"boot|run|private|Users|Applications|Library|System|app|code|workspace)/[\w.\-/]+"
+    r"|/(?:[\w.\-]+/)+[\w.\-]+\."
+    r"(?:py|pyc|js|mjs|cjs|jsx|ts|tsx|rb|go|java|php|rs|cpp|hpp|cs|sh|bash|"
+    r"conf|cfg|ini|ya?ml|toml|log|sql|sqlite3?|db|pem|key)\b"
+)
 _SQL_ERROR_RE = re.compile(
     r"SQLSTATE\[|ORA-\d{5}|sqlite3\.\w*Error|You have an error in your SQL syntax"
 )

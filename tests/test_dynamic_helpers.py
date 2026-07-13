@@ -48,6 +48,20 @@ class TestSharedHelperBehaviour:
         assert dh.find_leak("KeyError") is not None
         assert dh.find_leak("everything is fine, item returned") is None
 
+    def test_find_leak_flags_real_filesystem_paths(self):
+        # Echte geleakte Dateisystem-Pfade bleiben ein Leak-Marker.
+        assert dh.find_leak("open failed: /etc/passwd") is not None
+        assert dh.find_leak("at /home/deploy/app/server.py") is not None
+        assert dh.find_leak("could not load /opt/service/config.yaml") is not None
+        assert dh.find_leak("no such file /var/log/app.log") is not None
+
+    def test_find_leak_ignores_url_routes(self):
+        # Harmlose URL-Routen in Fehlermeldungen sind KEIN Interna-Leak (FP-Fix,
+        # Review 2026-07): kein System-Root, keine Datei-Endung.
+        assert dh.find_leak("resource not found at /api/v1/users") is None
+        assert dh.find_leak("unknown route /products/123/reviews") is None
+        assert dh.find_leak("GET /health returned 200") is None
+
     def test_truncate_respects_limit(self):
         assert dh.truncate("short", limit=200) == "short"
         long = "A" * 300
