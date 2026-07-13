@@ -61,11 +61,12 @@ third-party validation. Specifically:
   **regression guard** (a check that breaks or a new FP shows up immediately),
   and (c) it is **reproducible and extensible** — anyone can point it at an
   independent corpus or add a competitor adapter and re-run.
-- **For independent validation**, run the harness against a public,
-  externally-authored corpus such as the appsecco *Vulnerable-MCP-Lab* or
-  *MCPTox* (add them under `corpus/` with ground-truth labels). That is the
-  credible comparison and is deliberately left as a follow-up rather than
-  fabricated here.
+- **For independent validation**, we run against externally-authored corpora
+  (a deliberately-vulnerable MCP server for recall, the official reference
+  servers for precision-in-the-wild) — with pinned commits and reproduction
+  steps in [`EXTERNAL.md`](./EXTERNAL.md). That run already caught a real
+  precision bug (SDK handlers mis-detected as tools). Adding more external
+  corpora (appsecco *Vulnerable-MCP-Lab*, *MCPTox*) is a natural next step.
 - **Competitor columns are only populated if the tool is installed.** Semgrep
   and agent-audit adapters shell out *if present*; otherwise the report shows
   "not installed (skipped)" — never invented numbers. To compare, install them
