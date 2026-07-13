@@ -382,6 +382,19 @@ stateless `server/discover` with a fallback to the legacy `initialize` handshake
 
 </details>
 
+## Benchmark
+
+A reproducible, labeled benchmark lives in [`benchmark/`](./benchmark/) — run
+`python -m benchmark.run` to score McpFrisk's precision/recall on a corpus of
+vulnerable **and** realistic-clean MCP-server samples (latest run:
+[`benchmark/RESULTS.md`](./benchmark/RESULTS.md)). It also has tool-agnostic
+adapters to compare against Semgrep / agent-audit when they're installed. The
+harness is transparent about its limits — it's a McpFrisk-authored corpus, so it
+proves **FP-discipline on clean code** and guards against regressions rather than
+serving as independent third-party validation (point it at an external corpus for
+that). See [`benchmark/README.md`](./benchmark/README.md) for the full methodology
+and honesty caveats.
+
 ## Roadmap
 
 All originally planned checks have landed. Six extra ones went in beyond the initial roadmap:
@@ -390,8 +403,7 @@ All originally planned checks have landed. Six extra ones went in beyond the ini
 `FALSE_ERROR_ESCALATION` (Consent-Confused-Deputy), and `PACKAGE_PROVENANCE` (npm signatures).
 What remains is the deliberately-last milestone:
 
-- **Public benchmark + release** — measured comparison vs. the field, then PyPI / public repo /
-  Marketplace (see below).
+- **Public release** — PyPI / public repo / Marketplace (see below).
 
 ## Design principles
 

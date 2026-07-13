@@ -1,0 +1,10 @@
+{
+  "description": "JS/TS: child_process.exec with template-literal interpolation",
+  "expected": [
+    {
+      "check_id": "CMD_INJECTION",
+      "min_severity": "high"
+    }
+  ],
+  "requires_jsts": true
+}

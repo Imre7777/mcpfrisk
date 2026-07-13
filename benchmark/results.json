@@ -1,0 +1,243 @@
+{
+  "jsts_available": true,
+  "overall": {
+    "tp": 11,
+    "fp": 0,
+    "fn": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  "per_check": {
+    "CMD_INJECTION": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "FALSE_ERROR_ESCALATION": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "HARDCODED_SECRETS": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "MCP_CONFIG_AUDIT": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "PATH_TRAVERSAL": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "SCHEMA_DOCSTRING_MISMATCH": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "TOOL_NAME_COLLISION": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "TOOL_POISONING": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "TYPOSQUAT": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    }
+  },
+  "per_sample": [
+    {
+      "sample": "01-cmd-injection-py",
+      "kind": "vuln",
+      "expected": [
+        "CMD_INJECTION"
+      ],
+      "mcpfrisk_found": [
+        "CMD_INJECTION"
+      ],
+      "mcpfrisk_skipped": false
+    },
+    {
+      "sample": "02-path-traversal-py",
+      "kind": "vuln",
+      "expected": [
+        "PATH_TRAVERSAL"
+      ],
+      "mcpfrisk_found": [
+        "PATH_TRAVERSAL"
+      ],
+      "mcpfrisk_skipped": false
+    },
+    {
+      "sample": "03-hardcoded-secret-py",
+      "kind": "vuln",
+      "expected": [
+        "HARDCODED_SECRETS"
+      ],
+      "mcpfrisk_found": [
+        "HARDCODED_SECRETS"
+      ],
+      "mcpfrisk_skipped": false
+    },
+    {
+      "sample": "04-tool-poisoning-py",
+      "kind": "vuln",
+      "expected": [
+        "TOOL_POISONING"
+      ],
+      "mcpfrisk_found": [
+        "TOOL_POISONING"
+      ],
+      "mcpfrisk_skipped": false
+    },
+    {
+      "sample": "05-tool-collision-py",
+      "kind": "vuln",
+      "expected": [
+        "TOOL_NAME_COLLISION"
+      ],
+      "mcpfrisk_found": [
+        "TOOL_NAME_COLLISION"
+      ],
+      "mcpfrisk_skipped": false
+    },
+    {
+      "sample": "06-config-audit",
+      "kind": "vuln",
+      "expected": [
+        "HARDCODED_SECRETS",
+        "MCP_CONFIG_AUDIT"
+      ],
+      "mcpfrisk_found": [
+        "HARDCODED_SECRETS",
+        "MCP_CONFIG_AUDIT"
+      ],
+      "mcpfrisk_skipped": false
+    },
+    {
+      "sample": "07-schema-mismatch-py",
+      "kind": "vuln",
+      "expected": [
+        "SCHEMA_DOCSTRING_MISMATCH"
+      ],
+      "mcpfrisk_found": [
+        "SCHEMA_DOCSTRING_MISMATCH"
+      ],
+      "mcpfrisk_skipped": false
+    },
+    {
+      "sample": "08-escalation-py",
+      "kind": "vuln",
+      "expected": [
+        "FALSE_ERROR_ESCALATION"
+      ],
+      "mcpfrisk_found": [
+        "FALSE_ERROR_ESCALATION"
+      ],
+      "mcpfrisk_skipped": false
+    },
+    {
+      "sample": "09-typosquat",
+      "kind": "vuln",
+      "expected": [
+        "TYPOSQUAT"
+      ],
+      "mcpfrisk_found": [
+        "TYPOSQUAT"
+      ],
+      "mcpfrisk_skipped": false
+    },
+    {
+      "sample": "10-cmd-injection-ts",
+      "kind": "vuln",
+      "expected": [
+        "CMD_INJECTION"
+      ],
+      "mcpfrisk_found": [
+        "CMD_INJECTION"
+      ],
+      "mcpfrisk_skipped": false
+    },
+    {
+      "sample": "20-clean-fastmcp-py",
+      "kind": "clean",
+      "expected": [],
+      "mcpfrisk_found": [],
+      "mcpfrisk_skipped": false
+    },
+    {
+      "sample": "21-clean-config",
+      "kind": "clean",
+      "expected": [],
+      "mcpfrisk_found": [],
+      "mcpfrisk_skipped": false
+    },
+    {
+      "sample": "22-clean-subprocess-py",
+      "kind": "clean",
+      "expected": [],
+      "mcpfrisk_found": [],
+      "mcpfrisk_skipped": false
+    },
+    {
+      "sample": "23-clean-ts",
+      "kind": "clean",
+      "expected": [],
+      "mcpfrisk_found": [],
+      "mcpfrisk_skipped": false
+    }
+  ],
+  "cross_tool": {
+    "McpFrisk": {
+      "available": true,
+      "vuln_detected": 10,
+      "vuln_total": 10,
+      "clean_passed": 4,
+      "clean_total": 4,
+      "errors": 0
+    },
+    "Semgrep": {
+      "available": false
+    },
+    "agent-audit": {
+      "available": false
+    }
+  }
+}

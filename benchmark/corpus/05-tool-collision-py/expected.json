@@ -1,0 +1,9 @@
+{
+  "description": "Python: duplicate tool name (shadowing)",
+  "expected": [
+    {
+      "check_id": "TOOL_NAME_COLLISION",
+      "min_severity": "medium"
+    }
+  ]
+}

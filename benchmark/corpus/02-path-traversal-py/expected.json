@@ -1,0 +1,9 @@
+{
+  "description": "Python: path built from tool param without sandboxing",
+  "expected": [
+    {
+      "check_id": "PATH_TRAVERSAL",
+      "min_severity": "high"
+    }
+  ]
+}

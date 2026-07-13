@@ -1,0 +1,5 @@
+{
+  "description": "JS/TS: documented api_key, no exec (clean)",
+  "expected": [],
+  "requires_jsts": true
+}

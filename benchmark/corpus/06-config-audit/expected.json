@@ -1,0 +1,13 @@
+{
+  "description": "MCP config: plaintext secret in env + unpinned npx package. The sk-live-... token is a real plaintext credential, so BOTH the config auditor and the secret scanner correctly flag it (defense-in-depth) -- ground truth lists both.",
+  "expected": [
+    {
+      "check_id": "MCP_CONFIG_AUDIT",
+      "min_severity": "high"
+    },
+    {
+      "check_id": "HARDCODED_SECRETS",
+      "min_severity": "critical"
+    }
+  ]
+}

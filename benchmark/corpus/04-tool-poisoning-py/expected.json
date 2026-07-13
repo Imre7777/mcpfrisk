@@ -1,0 +1,9 @@
+{
+  "description": "Python: hidden instruction tag in tool description",
+  "expected": [
+    {
+      "check_id": "TOOL_POISONING",
+      "min_severity": "high"
+    }
+  ]
+}

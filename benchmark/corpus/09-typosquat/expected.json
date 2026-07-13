@@ -1,0 +1,9 @@
+{
+  "description": "PyPI: typosquat of fastmcp (adjacent transposition)",
+  "expected": [
+    {
+      "check_id": "TYPOSQUAT",
+      "min_severity": "medium"
+    }
+  ]
+}

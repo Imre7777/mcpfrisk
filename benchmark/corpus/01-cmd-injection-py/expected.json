@@ -1,0 +1,9 @@
+{
+  "description": "Python: subprocess shell=True with f-string interpolation",
+  "expected": [
+    {
+      "check_id": "CMD_INJECTION",
+      "min_severity": "critical"
+    }
+  ]
+}

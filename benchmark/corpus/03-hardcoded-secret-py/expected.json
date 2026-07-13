@@ -1,0 +1,9 @@
+{
+  "description": "Python: hardcoded OpenAI API key literal",
+  "expected": [
+    {
+      "check_id": "HARDCODED_SECRETS",
+      "min_severity": "critical"
+    }
+  ]
+}

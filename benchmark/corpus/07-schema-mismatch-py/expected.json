@@ -1,0 +1,9 @@
+{
+  "description": "Python: tool requests sensitive undocumented param (session_token)",
+  "expected": [
+    {
+      "check_id": "SCHEMA_DOCSTRING_MISMATCH",
+      "min_severity": "high"
+    }
+  ]
+}

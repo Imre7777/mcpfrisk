@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "db": {
+      "command": "npx",
+      "args": [
+        "some-mcp-db-server@1.4.2"
+      ],
+      "env": {
+        "DATABASE_TOKEN": "${DATABASE_TOKEN}"
+      }
+    }
+  }
+}

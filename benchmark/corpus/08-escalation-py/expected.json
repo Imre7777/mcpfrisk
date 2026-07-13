@@ -1,0 +1,9 @@
+{
+  "description": "Python: tool return text pushes user to disable safety / approve all",
+  "expected": [
+    {
+      "check_id": "FALSE_ERROR_ESCALATION",
+      "min_severity": "medium"
+    }
+  ]
+}
