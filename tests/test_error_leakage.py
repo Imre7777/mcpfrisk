@@ -21,7 +21,6 @@ from mcpfrisk.checks.error_leakage import ErrorLeakageCheck
 from mcpfrisk.core.dynamic_runner import DynamicRunner, DynamicSession
 from mcpfrisk.core.models import BoundaryOutcome, ErrorProbeClass
 from mcpfrisk.core.stdio_transport import StdioTransport
-
 from tests.fixtures.error_leakage_servers import running_error_leakage_server
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "stdio_server.py"

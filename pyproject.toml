@@ -41,17 +41,21 @@ dependencies = []
 # verwendet, nie direkt in den Checks. Fehlt das Extra, werden JS/TS-Dateien sauber
 # übersprungen (nie als "clean" gewertet), statt zu crashen.
 [project.optional-dependencies]
+# tree-sitter ist 0.x -- Minor-Releases können die ABI/Grammatik-Schnittstelle
+# brechen. Deshalb mit Obergrenze pinnen (getestet gegen die unten genannten
+# Stände), damit ein stiller Upgrade den JS/TS-Parser nicht unbemerkt zerlegt.
 jsts = [
-    "tree-sitter>=0.21",
-    "tree-sitter-typescript",
-    "tree-sitter-javascript",
+    "tree-sitter>=0.21,<0.26",
+    "tree-sitter-typescript>=0.21,<0.24",
+    "tree-sitter-javascript>=0.21,<0.26",
 ]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
-    "tree-sitter>=0.21",
-    "tree-sitter-typescript",
-    "tree-sitter-javascript",
+    "ruff>=0.6",
+    "tree-sitter>=0.21,<0.26",
+    "tree-sitter-typescript>=0.21,<0.24",
+    "tree-sitter-javascript>=0.21,<0.26",
 ]
 
 [project.scripts]
@@ -67,3 +71,22 @@ include = ["mcpfrisk*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+
+[tool.coverage.run]
+source = ["mcpfrisk"]
+
+[tool.ruff]
+target-version = "py310"
+# Absichtlich verwundbarer/kaputter Sample-Code wird NICHT gelintet -- das sind
+# Test-Eingaben (z.B. bewusste Namens-Duplikate, ungenutzte Variablen), keine
+# zu pflegende Quelle.
+extend-exclude = ["benchmark/corpus", "tests/fixtures"]
+
+[tool.ruff.lint]
+# Nahe an den Defaults (E/F) plus Import-Sortierung (I) und Bugbear (B);
+# bewusst schlank gehalten, damit der Lint aussagekräftig statt lärmend ist.
+select = ["E", "F", "W", "I", "B"]
+ignore = [
+    "E501",   # Zeilenlänge: lange deutsche Finding-Texte / Regex sind gewollt
+    "B008",   # Funktionsaufruf im Default-Argument (bei uns bewusst, z.B. Factory)
+]

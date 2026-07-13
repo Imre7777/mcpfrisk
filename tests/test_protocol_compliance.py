@@ -18,7 +18,6 @@ from mcpfrisk.checks.protocol_compliance import ProtocolComplianceCheck
 from mcpfrisk.core.dynamic_runner import DynamicRunner, DynamicSession
 from mcpfrisk.core.models import BoundaryOutcome, ProtocolProbeClass
 from mcpfrisk.core.stdio_transport import StdioTransport
-
 from tests.fixtures.protocol_servers import running_protocol_server
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "stdio_server.py"

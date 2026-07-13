@@ -20,7 +20,7 @@ HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE.parent))  # Repo-Root importierbar machen
 
 from benchmark import metrics as M  # noqa: E402
-from benchmark.scanners import ALL_SCANNERS, Scanner  # noqa: E402
+from benchmark.scanners import ALL_SCANNERS  # noqa: E402
 
 CORPUS = HERE / "corpus"
 

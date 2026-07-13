@@ -444,13 +444,16 @@ What remains is the deliberately-last milestone:
 ## Development
 
 ```bash
-pip install -e ".[dev]"                                   # tests + tree-sitter
+pip install -e ".[dev]"                                   # tests + tree-sitter + ruff
 pytest -q                                                 # full suite
-pytest --cov=mcpfrisk --cov-report=term-missing           # with coverage (as in CI)
+pytest --cov=mcpfrisk --cov-report=term-missing           # with coverage (CI gate: ≥88%)
+ruff check .                                               # lint (CI-enforced)
 ```
 
-CI runs against Python 3.10 / 3.11 / 3.12 and, in a dedicated job, the degradation path
-**without** the `jsts` extra (the base install must never crash).
+CI runs **ruff** (lint) plus the test suite against Python 3.10 / 3.11 / 3.12, with a
+coverage gate (≥88%) and a dedicated job for the degradation path **without** the `jsts`
+extra (the base install must never crash). Contributions: [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+Security reports: [`SECURITY.md`](./SECURITY.md). Changes: [`CHANGELOG.md`](./CHANGELOG.md).
 
 <details>
 <summary><b>Project layout</b></summary>

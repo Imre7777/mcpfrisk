@@ -40,9 +40,9 @@ _STRING_TYPES = {"string", "template_string"}
 def _languages():
     """Lädt die Grammatiken einmalig. Gibt None zurück, wenn das `jsts`-Extra fehlt."""
     try:
-        from tree_sitter import Language
         import tree_sitter_javascript as tsjs
         import tree_sitter_typescript as tsts
+        from tree_sitter import Language
 
         return {
             SourceLanguage.JAVASCRIPT: Language(tsjs.language()),

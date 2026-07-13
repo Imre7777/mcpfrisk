@@ -16,7 +16,6 @@ from mcpfrisk.checks._ssrf_callback import CallbackListener
 from mcpfrisk.checks.ssrf_check import SsrfCheck
 from mcpfrisk.core.dynamic_runner import DynamicRunner, DynamicSession
 from mcpfrisk.core.models import BoundaryOutcome
-
 from tests.fixtures.ssrf_servers import running_ssrf_server
 
 

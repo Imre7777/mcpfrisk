@@ -11,7 +11,6 @@ from __future__ import annotations
 from mcpfrisk.checks.rbac_cross_tenant import RbacCrossTenantCheck
 from mcpfrisk.core.dynamic_runner import DynamicRunner, DynamicSession, IdentityConfig
 from mcpfrisk.core.models import BoundaryOutcome, RbacProbeClass
-
 from tests.fixtures.rbac_servers import running_rbac_server
 
 _TWO = {"A": "tok-a", "B": "tok-b"}

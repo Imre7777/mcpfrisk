@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from mcpfrisk.core.dynamic_runner import DynamicRunner
 from mcpfrisk.core.models import BoundaryOutcome
-
 from tests.fixtures.auth_servers import running_auth_server
 
 

@@ -23,7 +23,6 @@ from mcpfrisk.checks.rate_limiting import RateLimitingCheck
 from mcpfrisk.core.dynamic_runner import DynamicRunner, DynamicSession
 from mcpfrisk.core.models import BoundaryOutcome
 from mcpfrisk.core.stdio_transport import StdioTransport
-
 from tests.fixtures.rate_limiting_servers import running_rate_limiting_server
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "stdio_server.py"

@@ -200,7 +200,9 @@ class StdioServerHandle:
             try:
                 raw = self._lines.get(timeout=remaining)
             except queue.Empty:
-                raise DynamicTransportError(f"Timeout ({timeout}s) auf Antwort zu {method}")
+                raise DynamicTransportError(
+                    f"Timeout ({timeout}s) auf Antwort zu {method}"
+                ) from None
             if raw is None:
                 raise DynamicTransportError(
                     "stdio-Server hat stdout geschlossen (Prozess beendet?)"

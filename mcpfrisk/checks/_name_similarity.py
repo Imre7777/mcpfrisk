@@ -24,7 +24,7 @@ def levenshtein_le_1(a: str, b: str) -> bool:
     if abs(la - lb) > 1:
         return False
     if la == lb:  # genau eine Substitution erlaubt
-        return sum(x != y for x, y in zip(a, b)) == 1
+        return sum(x != y for x, y in zip(a, b, strict=False)) == 1
     # Längen unterscheiden sich um 1 -> genau eine Einfügung/Löschung erlaubt.
     shorter, longer = (a, b) if la < lb else (b, a)
     i = j = 0

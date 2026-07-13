@@ -4,7 +4,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from mcpfrisk.core.models import BoundaryOutcome, DynamicScanResult, ScanResult, Severity
+from mcpfrisk.core.models import (
+    BoundaryOutcome,
+    DynamicScanResult,
+    ScanResult,
+    Severity,
+)
 
 SEVERITY_ICONS = {
     Severity.CRITICAL: "🔴",

@@ -21,7 +21,6 @@ from mcpfrisk.checks.schema_fuzzing import SchemaFuzzingCheck
 from mcpfrisk.core.dynamic_runner import DynamicRunner, DynamicSession
 from mcpfrisk.core.models import BoundaryOutcome
 from mcpfrisk.core.stdio_transport import StdioTransport
-
 from tests.fixtures.fuzzing_servers import running_fuzzing_server
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "stdio_server.py"

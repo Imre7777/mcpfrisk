@@ -11,7 +11,6 @@ import json
 
 from mcpfrisk import cli
 from mcpfrisk.core.baseline import load_baseline
-
 from tests.fixtures.ssrf_servers import running_ssrf_server
 
 _VULNERABLE_SNIPPET = (

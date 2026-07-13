@@ -9,7 +9,6 @@ Constitution-aligned:
 """
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 from mcpfrisk.checks.mcp_config_audit import McpConfigAuditCheck
@@ -37,7 +36,6 @@ def _titles(findings):
 class TestVulnerableConfig:
     def test_all_five_issue_classes_are_found(self, tmp_path):
         findings = _run(tmp_path, VULN)
-        blob = _titles(findings) + " " + " ".join(f.description for f in findings)
         # US1 plaintext secret
         assert any(f.severity == Severity.HIGH and "ANTHROPIC_API_KEY" in (f.snippet or f.description)
                    for f in findings)
