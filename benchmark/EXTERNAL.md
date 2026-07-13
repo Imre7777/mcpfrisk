@@ -68,12 +68,17 @@ decorator callee must be `tool` or end in `.tool` (commit that added
 This removed the 2 false positives across the whole tool-check family
 (collision / poisoning / schema-mismatch / drift).
 
-## Open item — filesystem PATH_TRAVERSAL false positives
+## Resolved — filesystem PATH_TRAVERSAL confidence calibration
 
 The 7 `filesystem/lib.ts` findings are the known limit of intra-procedural (+
-one-hop) taint analysis: the helpers assume pre-validated paths. Current design
-(a tested decision, `test_finding_precision.py`) keeps them **HIGH** with a triage
-hint (prefer false-positive over false-negative). A possible calibration is to
-report triage-hinted findings at **MEDIUM** (lower confidence, still reported) —
-this trades a bit of the FP-over-FN stance for better signal on library code. That
-is a deliberate product decision, tracked for review rather than changed silently.
+one-hop) taint analysis: the helpers assume pre-validated paths. **Decision
+(2026-07):** a triage-hinted finding — where the module defines a separate
+path-validation function that the flagged function doesn't call — is now emitted at
+**MEDIUM** instead of HIGH. Rationale: a high HIGH-severity false-positive rate on
+known-good code erodes user trust (and so the tool's mission); MEDIUM **suppresses
+nothing** (the finding still prints, still blocks at `--fail-on medium`, still
+carries the triage hint) — it just honestly signals lower confidence, the way
+mature scanners (Semgrep "confidence", CodeQL "precision") do. Proven cross-function
+taint flows stay HIGH. After this change the official-server run reports **1 HIGH +
+7 MEDIUM** path-traversal findings instead of 8 HIGH — the same detections, honestly
+ranked. See `CHANGELOG.md` and `test_finding_precision.py`.

@@ -430,8 +430,13 @@ What remains is the deliberately-last milestone:
   additionally follows taint **one function boundary deep** (the thin-wrapper pattern that
   purely intra-procedural analysis misses) — documented limits: **one** hop only, **same-module**
   helpers only, named helpers only. If a server validates in a function the check can't see,
-  `PATH_TRAVERSAL` still reports it (FP over FN) but attaches a **triage hint** to the existing
-  validation function.
+  `PATH_TRAVERSAL` still reports it (FP over FN) but **calibrates confidence**: when the module
+  defines a separate path-validation function that the flagged function doesn't call, the finding
+  is emitted at **MEDIUM** (not HIGH) with a **triage hint** naming that validator. It is never
+  suppressed — it still prints and still blocks at `--fail-on medium` — the lower severity just
+  reflects the higher likelihood of a false positive (validation the intra-procedural analysis
+  can't see). This keeps real-world scans of well-structured servers from being flooded with HIGH
+  false alarms.
 - **Severity follows a rubric.** A constant arg list with a redundant `shell=True` is a
   best-practice violation (MEDIUM), not a direct RCE path (CRITICAL is reserved for the
   interpolated command).

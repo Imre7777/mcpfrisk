@@ -30,6 +30,13 @@ onward.
   benchmarking).
 - Hardened `find_leak` so URL routes in error responses are no longer flagged as
   internal-path leaks.
+- **`PATH_TRAVERSAL` confidence calibration**: a finding whose module defines a
+  separate path-validation function that the flagged function doesn't call is now
+  emitted at **MEDIUM** (not HIGH) with a triage hint — it is never suppressed and
+  still blocks at `--fail-on medium`, but the lower severity honestly reflects the
+  higher false-positive likelihood (inter-procedural validation the analysis can't
+  see). Prompted by external benchmarking against the official reference servers.
+  Proven cross-function taint flows stay HIGH.
 
 _This is the pre-1.0 development history; the first tagged release will start the
 formal versioned changelog._

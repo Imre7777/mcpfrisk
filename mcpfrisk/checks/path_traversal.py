@@ -274,18 +274,28 @@ class PathTraversalCheck(BaseCheck):
             "Pfad-Normalisierung/Sandboxing-Prüfung (z.B. realpath, "
             "is_relative_to, resolve, startsWith) im Funktionskörper gefunden."
         )
+        # Konfidenz-Kalibrierung: Definiert das Modul eine separate Validierungs-
+        # funktion, die diese Funktion selbst nicht aufruft, ist ein FP deutlich
+        # wahrscheinlicher (das intra-prozedurale Tracking sieht die Validierung
+        # nur nicht) -> MEDIUM statt HIGH. Das UNTERDRÜCKT nichts (FP-über-FN
+        # bleibt: das Finding erscheint, blockiert bei --fail-on medium, trägt den
+        # Triage-Hinweis) -- es signalisiert nur ehrlich die geringere Konfidenz.
+        # Ohne einen solchen Modul-Validierer bleibt es HIGH.
+        severity = Severity.HIGH
         if external_validators:
+            severity = Severity.MEDIUM
             vlist = ", ".join(f"'{v}'" for v in sorted(set(external_validators)))
             description += (
                 f" Triage-Hinweis: Dieses Modul definiert separate "
                 f"Validierungsfunktion(en) ({vlist}). Falls der Pfad bereits dort "
-                "geprüft wird, BEVOR er hierher gelangt, könnte dies ein False "
-                "Positive sein -- bitte verifizieren. (Das intra-prozedurale "
-                "Taint-Tracking sieht funktionsübergreifende Validierung nicht.)"
+                "geprüft wird, BEVOR er hierher gelangt, ist dies wahrscheinlich ein "
+                "False Positive -- bitte verifizieren. Deshalb MEDIUM statt HIGH "
+                "(das intra-prozedurale Taint-Tracking sieht funktionsübergreifende "
+                "Validierung nicht)."
             )
         return Finding(
             check_id=self.check_id,
-            severity=Severity.HIGH,
+            severity=severity,
             title=f"Mögliche Path Traversal in Tool-Funktion '{func_name}'",
             description=description,
             file_path=model.path,

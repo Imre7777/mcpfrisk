@@ -112,7 +112,10 @@ class TestMultilineSnippet:
 class TestPathTraversalTriageContext:
     def test_module_with_separate_validator_adds_hint(self, tmp_path):
         """filesystem-Muster: Validierung in eigener Funktion, Öffner in anderer.
-        Das Finding feuert weiterhin (HIGH) und nennt die Validierungsfunktion."""
+        Das Finding feuert weiterhin, aber als MEDIUM (Konfidenz-Kalibrierung:
+        Modul hat einen Validierer, den diese Funktion nicht sieht -> FP
+        wahrscheinlich; nicht unterdrückt, nur herabgestuft) und nennt die
+        Validierungsfunktion."""
         sample = tmp_path / "with_validator.py"
         sample.write_text(
             "import os\n"
@@ -129,7 +132,7 @@ class TestPathTraversalTriageContext:
         findings = PathTraversalCheck().run(tmp_path)
         assert len(findings) >= 1, "Finding darf nicht unterdrückt werden."
         f = findings[0]
-        assert f.severity == Severity.HIGH
+        assert f.severity == Severity.MEDIUM  # Konfidenz-Kalibrierung (Triage-Kontext)
         assert "validate_path" in f.description
         assert "verifizieren" in f.description.lower()
 

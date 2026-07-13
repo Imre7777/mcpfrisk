@@ -475,6 +475,19 @@ Priorisiert nach Recherche-Relevanz:
   Finding wird unterdrückt, keine Pfade ausgeschlossen (Prinzip III + die
   "never exclude paths containing test"-Lesson). Validiert gegen
   `modelcontextprotocol/{servers,python-sdk}` und `egoist/fetch-mcp`.
+- ~~PATH_TRAVERSAL-Konfidenz-Kalibrierung aus externem Benchmark~~ **ERLEDIGT**
+  (Release-Härtung 2026-07, Entscheidung des Nutzers delegiert an Senior-Dev-
+  Urteil): Der externe Benchmark gegen die offiziellen `modelcontextprotocol/
+  servers` erzeugte 7 HIGH-PATH_TRAVERSAL-FPs (interne IO-Helfer, die validierte
+  Pfade erhalten — inter-prozedurale Validierung, die McpFrisk bewusst nicht
+  verfolgt). Entscheidung: ein Triage-behaftetes Finding (Modul hat einen
+  Validierer, den diese Funktion nicht aufruft) wird als **MEDIUM statt HIGH**
+  gemeldet. Rationale: ein hoher HIGH-FP-Anteil auf bekannt-gutem Code
+  untergräbt das Nutzervertrauen (und damit die Mission); MEDIUM **unterdrückt
+  nichts** (Finding erscheint, blockiert bei `--fail-on medium`, Triage-Hinweis
+  bleibt) — es signalisiert nur ehrlich die geringere Konfidenz (Semgrep-/CodeQL-
+  Muster). Der bewiesene Cross-Function-Fluss (`_make_cross_finding`) bleibt HIGH.
+  `test_finding_precision.py::test_module_with_separate_validator_adds_hint`.
 - ~~GitHub Action als eigenständiges, wiederverwendbares Composite-Action
   veröffentlichen~~ **ERLEDIGT** (Feature `010-ci-integration`):
   [`action.yml`](./action.yml) installiert McpFrisk aus dem eigenen
