@@ -387,13 +387,26 @@ stateless `server/discover` with a fallback to the legacy `initialize` handshake
 A reproducible, labeled benchmark lives in [`benchmark/`](./benchmark/) — run
 `python -m benchmark.run` to score McpFrisk's precision/recall on a corpus of
 vulnerable **and** realistic-clean MCP-server samples (latest run:
-[`benchmark/RESULTS.md`](./benchmark/RESULTS.md)). It also has tool-agnostic
-adapters to compare against Semgrep / agent-audit when they're installed. The
-harness is transparent about its limits — it's a McpFrisk-authored corpus, so it
-proves **FP-discipline on clean code** and guards against regressions rather than
-serving as independent third-party validation (point it at an external corpus for
-that). See [`benchmark/README.md`](./benchmark/README.md) for the full methodology
-and honesty caveats.
+[`benchmark/RESULTS.md`](./benchmark/RESULTS.md)).
+
+Head-to-head detection on that corpus (full data + caveats in
+[`benchmark/EXTERNAL.md`](./benchmark/EXTERNAL.md)):
+
+| Tool | Vuln detected | Clean (no false alarm) |
+|---|:---:|:---:|
+| **McpFrisk** | **10 / 10** | **4 / 4** |
+| agent-audit 0.19.2 | 4 / 10 | 3 / 4 |
+| Semgrep 1.169.0 (`p/python`,`p/javascript`) | 1 / 10 | 4 / 4 |
+
+> **Read this honestly:** the corpus is McpFrisk-authored and deliberately
+> emphasizes MCP-*specific* vulnerability classes (tool poisoning, schema/description
+> mismatch, typosquatting, consent-escalation, …), which is what McpFrisk is built
+> for — so it measures *MCP-specific coverage*, **not** a neutral general-purpose SAST
+> comparison. agent-audit and Semgrep are solid tools; competitor scores also depend
+> on configuration. Independent recall (an externally-authored vulnerable server) and
+> precision-in-the-wild (the official reference servers) are in
+> [`benchmark/EXTERNAL.md`](./benchmark/EXTERNAL.md); methodology in
+> [`benchmark/README.md`](./benchmark/README.md).
 
 ## Roadmap
 
