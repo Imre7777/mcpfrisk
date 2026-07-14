@@ -1,9 +1,9 @@
 {
   "provenance": {
-    "generated_at_utc": "2026-07-13T15:20:32Z",
-    "git_commit": "92756c38d756e20a04af31c7862270bc14e6f342",
-    "git_commit_short": "92756c3",
-    "git_branch": "benchmark-provenance-2026-07",
+    "generated_at_utc": "2026-07-14T08:18:24Z",
+    "git_commit": "98feb851457a54aab1ea2c09267c8f6fa58534c7",
+    "git_commit_short": "98feb85",
+    "git_branch": "crosstool-comparison",
     "git_working_tree_clean": true,
     "mcpfrisk_version": "0.1.0",
     "python_version": "3.13.3",

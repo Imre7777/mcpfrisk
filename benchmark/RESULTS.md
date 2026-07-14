@@ -6,8 +6,8 @@
 
 | | |
 |---|---|
-| Generated (UTC) | 2026-07-13T15:20:32Z |
-| Git commit | `92756c3` (benchmark-provenance-2026-07) |
+| Generated (UTC) | 2026-07-14T08:18:24Z |
+| Git commit | `98feb85` (crosstool-comparison) |
 | Working tree | clean |
 | McpFrisk version | 0.1.0 |
 | Python | 3.13.3 · Windows-11-10.0.26200-SP0 |
