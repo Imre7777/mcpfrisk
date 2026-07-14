@@ -70,7 +70,9 @@ third-party validation. Specifically:
 - **Competitor columns are only populated if the tool is installed.** Semgrep
   and agent-audit adapters shell out *if present*; otherwise the report shows
   "not installed (skipped)" — never invented numbers. To compare, install them
-  (`pip install semgrep agent-audit`) and re-run.
+  (`pip install semgrep agent-audit`) and re-run. A recorded head-to-head run
+  (McpFrisk 10/10 vs. agent-audit 4/10 vs. Semgrep 1/10 detection, with honest
+  caveats) is in [`EXTERNAL.md`](./EXTERNAL.md#cross-tool-comparison--2026-07-14).
 - **Static checks only.** McpFrisk's 7 dynamic (Tier-2) checks need a *running*
   server and are out of scope for this file-based harness; a dynamic benchmark
   (spinning up vulnerable/clean fixture servers) is a possible extension.

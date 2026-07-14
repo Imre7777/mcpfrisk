@@ -32,6 +32,23 @@ class ScanOutput:
         return bool(self.findings)
 
 
+def _tool_works(name: str) -> bool:
+    """True nur, wenn das Tool im PATH ist UND tatsächlich läuft (`--version`
+    erfolgreich). So gilt z.B. ein auf nativem Windows installiertes, aber nicht
+    lauffähiges semgrep (Core-Binary fehlt) ehrlich als 'nicht verfügbar' statt
+    bei jedem Sample einen Scan-Fehler zu produzieren."""
+    exe = shutil.which(name)
+    if not exe:
+        return False
+    try:
+        proc = subprocess.run(
+            [exe, "--version"], capture_output=True, text=True, timeout=30
+        )
+    except (subprocess.SubprocessError, OSError):
+        return False
+    return proc.returncode == 0
+
+
 class Scanner:
     name = "scanner"
 
@@ -65,7 +82,7 @@ class SemgrepScanner(Scanner):
     name = "Semgrep"
 
     def available(self) -> bool:
-        return shutil.which("semgrep") is not None
+        return _tool_works("semgrep")
 
     def scan(self, sample_dir: Path) -> ScanOutput:
         exe = shutil.which("semgrep")
@@ -93,7 +110,7 @@ class AgentAuditScanner(Scanner):
     name = "agent-audit"
 
     def available(self) -> bool:
-        return shutil.which("agent-audit") is not None
+        return _tool_works("agent-audit")
 
     def scan(self, sample_dir: Path) -> ScanOutput:
         exe = shutil.which("agent-audit")

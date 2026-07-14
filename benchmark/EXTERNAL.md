@@ -68,6 +68,61 @@ decorator callee must be `tool` or end in `.tool` (commit that added
 This removed the 2 false positives across the whole tool-check family
 (collision / poisoning / schema-mismatch / drift).
 
+## Cross-tool comparison — 2026-07-14
+
+Run of the labeled `corpus/` benchmark with two real competitors installed
+(`python -m benchmark.run` with them on `PATH`). **Detection** = did the tool
+report *any* finding on a vulnerable sample; **clean passed** = did it stay silent
+on a clean sample.
+
+| Tool | Version | Vuln detected | Clean passed | Config used |
+|---|---|---:|---:|---|
+| **McpFrisk** | 0.1.0 | **10 / 10** | **4 / 4** | (built-in) |
+| agent-audit | 0.19.2 | 4 / 10 | 3 / 4 | `agent-audit scan <path> --format json` |
+| Semgrep | 1.169.0 | 1 / 10 | 4 / 4 | `semgrep scan --config p/python --config p/javascript` |
+
+Per-sample detection (vulnerable samples):
+
+| Sample (planted issue) | McpFrisk | agent-audit | Semgrep |
+|---|:---:|:---:|:---:|
+| `01` command injection (py) | ✅ | ✅ | ✅ |
+| `02` path traversal (py) | ✅ | ✅ | ❌ |
+| `03` hardcoded secret (py) | ✅ | ❌ | ❌ |
+| `04` tool poisoning (py) | ✅ | ❌ | ❌ |
+| `05` tool-name collision (py) | ✅ | ❌ | ❌ |
+| `06` risky MCP config | ✅ | ✅ | ❌ |
+| `07` schema/description mismatch | ✅ | ❌ | ❌ |
+| `08` consent/escalation text | ✅ | ❌ | ❌ |
+| `09` dependency typosquat | ✅ | ❌ | ❌ |
+| `10` command injection (ts) | ✅ | ✅ | ❌ |
+
+- **False alarm:** agent-audit flagged the clean `22-clean-subprocess-py`
+  (allow-listed `subprocess` with an argument list) — 3/4 clean. Semgrep and
+  McpFrisk stayed silent on all clean samples.
+- **What the competitors miss here:** the MCP-*specific* classes — tool poisoning,
+  schema/description mismatch, typosquatting, consent-escalation, tool-name
+  collision, and (for Semgrep) hardcoded secrets under the chosen config. That is
+  the differentiation, not a claim that these are bad tools.
+
+### Honest reading (important)
+
+- **This corpus is McpFrisk-authored and deliberately emphasizes MCP-specific
+  vulnerability classes** — the classes McpFrisk is built for. So this measures
+  *coverage of MCP-specific issues*, where McpFrisk is designed to lead. It is
+  **not** a claim that McpFrisk is a better general-purpose SAST than Semgrep, nor
+  a fully neutral head-to-head.
+- **Competitor scores depend on configuration.** Semgrep with a broader ruleset
+  (`p/secrets`, `p/security-audit`, …) would catch more of the generic classes;
+  agent-audit may have tuning we didn't apply. We used a single reasonable config
+  each and counted detections **generously** (any finding, including agent-audit's
+  suppressed-tier ones).
+- Both competitors are legitimate, mature tools. agent-audit in particular is a
+  strong direct peer; the takeaway is McpFrisk's MCP-specific coverage + zero
+  false alarms on this corpus, not that the others are weak.
+- **Reproduce:** `pip install semgrep agent-audit`, ensure both are on `PATH`,
+  then `python -m benchmark.run` (needs network for Semgrep's registry rulesets).
+  Semgrep does not run on native Windows without WSL.
+
 ## Resolved — filesystem PATH_TRAVERSAL confidence calibration
 
 The 7 `filesystem/lib.ts` findings are the known limit of intra-procedural (+
