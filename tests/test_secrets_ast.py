@@ -49,3 +49,34 @@ def test_ts_key_in_comment_is_not_flagged(tmp_path):
 def test_ts_real_assignment_is_still_flagged(tmp_path):
     findings = _run(tmp_path, "x.ts", f'const API_KEY = "{FAKE_KEY}";\n')
     assert len(findings) >= 1
+
+
+class TestPlaceholderSecretsAreNotFlagged:
+    """Real-World-Validierung 2026-07 (modelcontextprotocol/typescript-sdk):
+    Test-Dummys/Platzhalter dürfen KEIN Secret-Finding auslösen -- sonst meldet
+    der Check Test-Code als CRITICAL (der peinlichste False Positive)."""
+
+    def test_invalid_test_private_key_is_skipped(self, tmp_path):
+        # Gültige, einzeilige Quelle (der reale typescript-sdk-Fall ist ein
+        # String-Literal mit \\n-Escapes -> selber AST-Wert-Pfad, selber Filter).
+        findings = _run(
+            tmp_path, "srv.py",
+            'BAD_PEM = "-----BEGIN PRIVATE KEY----- not-a-valid-key -----END PRIVATE KEY-----"\n',
+        )
+        assert findings == []
+
+    def test_expired_test_bearer_token_is_skipped(self, tmp_path):
+        findings = _run(tmp_path, "srv.py", "HEADER = 'Bearer expired-access-token'\n")
+        assert findings == []
+
+    def test_placeholder_your_token_here_is_skipped(self, tmp_path):
+        findings = _run(tmp_path, "config.env", "API_KEY=your-api-key-here-xxxxxxxxxxxx\n")
+        assert findings == []
+
+    def test_real_key_is_still_flagged(self, tmp_path):
+        # Gegenprobe: ein echtes Key-Format ohne Platzhalter-Wörter bleibt CRITICAL.
+        findings = _run(
+            tmp_path, "srv.py",
+            "OPENAI = 'sk-proj-abc123def456ghi789jklmnopqrstuvwxyz0123456789'\n",
+        )
+        assert len(findings) == 1 and findings[0].severity.value == "critical"

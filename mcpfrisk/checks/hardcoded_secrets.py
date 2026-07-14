@@ -58,6 +58,22 @@ KNOWN_KEY_PATTERNS = {
 SUSPICIOUS_VAR_NAMES = re.compile(
     r"(?i)\b(api[_-]?key|secret|password|token|credential|access[_-]?key)\b"
 )
+
+# Offensichtliche Platzhalter / Test-Dummys: ein Treffer, dessen Wert so etwas
+# enthält, ist KEIN echtes Secret (Test-Fixtures wie "not-a-valid-key",
+# "Bearer expired-access-token", "your-token-here"). Ohne diesen Filter meldete
+# der Check Test-Code als CRITICAL -- der peinlichste False-Positive-Typ
+# (Real-World-Validierung 2026-07, z.B. modelcontextprotocol/typescript-sdk).
+_PLACEHOLDER_RE = re.compile(
+    r"(?i)(not[-_ ]?(a[-_ ]?)?(real|valid)|invalid|expired|example|sample|"
+    r"dummy|fake|placeholder|redacted|change[-_ ]?me|your[-_ ]|"
+    r"xxxx+|<[a-z0-9._-]+>|test[-_ ]?(token|key|secret|value|pem|cred|jwt)|"
+    r"foo(bar)?|lorem|\bhere\b|\.\.\.)"
+)
+
+
+def _is_placeholder(text: str) -> bool:
+    return bool(_PLACEHOLDER_RE.search(text))
 ENV_LOOKUP_HINTS = ("os.environ", "os.getenv", "process.env", "dotenv")
 
 
@@ -103,6 +119,8 @@ class HardcodedSecretsCheck(BaseCheck):
         flagged_lines: set[int] = set()
 
         for literal in model.string_literals():
+            if _is_placeholder(literal.value):
+                continue  # Test-Dummy/Platzhalter -> kein echtes Secret
             for key_type, pattern in KNOWN_KEY_PATTERNS.items():
                 if pattern.search(literal.value):
                     findings.append(
@@ -196,6 +214,9 @@ class HardcodedSecretsCheck(BaseCheck):
             stripped = line.strip()
             if stripped.startswith("#") or stripped.startswith("//"):
                 continue  # Kommentarzeilen seltener relevant, reduziert Noise
+
+            if _is_placeholder(line):
+                continue  # Test-Dummy/Platzhalter -> kein echtes Secret
 
             # 1. Bekannte Key-Formate
             for key_type, pattern in KNOWN_KEY_PATTERNS.items():
