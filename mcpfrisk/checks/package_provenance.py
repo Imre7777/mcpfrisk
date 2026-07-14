@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Protocol
 
 from mcpfrisk.core.base_check import BaseCheck
-from mcpfrisk.core.fs import DEFAULT_EXCLUDED_DIRS, rglob_or_file
+from mcpfrisk.core.fs import is_excluded, rglob_or_file
 from mcpfrisk.core.models import Finding, Severity
 
 _LOCKFILES = ("package-lock.json", "npm-shrinkwrap.json")
@@ -157,7 +157,7 @@ class PackageProvenanceCheck(BaseCheck):
     def _has_lockfile(self, target_path: Path) -> bool:
         for pattern in _LOCKFILES:
             for path in rglob_or_file(target_path, pattern):
-                if not any(part in DEFAULT_EXCLUDED_DIRS for part in path.parts):
+                if not is_excluded(path, target_path):
                     return True
         return False
 

@@ -83,7 +83,7 @@ def test_scan_prints_jsts_hint_once_when_extra_missing(tmp_path, monkeypatch, ca
         (JSTS / "cmd_injection_vuln.ts").read_text(encoding="utf-8"), encoding="utf-8"
     )
     args = argparse.Namespace(
-        path=tmp_path, json=None, fail_on="high", skip=[],
+        path=tmp_path, json=None, fail_on="high", skip=[], exclude=[],
         baseline=None, write_baseline=None, sarif=None, write_tools_baseline=False,
     )
     _run_scan(args)

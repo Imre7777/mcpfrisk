@@ -28,7 +28,7 @@ from pathlib import Path
 
 from mcpfrisk.checks._name_similarity import damerau_le_1
 from mcpfrisk.core.base_check import BaseCheck
-from mcpfrisk.core.fs import DEFAULT_EXCLUDED_DIRS, rglob_or_file
+from mcpfrisk.core.fs import is_excluded, rglob_or_file
 from mcpfrisk.core.models import Finding, Severity
 
 _MANIFESTS = ("package.json", "requirements.txt", "pyproject.toml")
@@ -170,7 +170,7 @@ class TyposquatCheck(BaseCheck):
         seen: set[Path] = set()
         for pattern in _MANIFESTS:
             for path in rglob_or_file(target_path, pattern):
-                if any(part in DEFAULT_EXCLUDED_DIRS for part in path.parts):
+                if is_excluded(path, target_path):
                     continue
                 seen.add(path)
         return sorted(seen)

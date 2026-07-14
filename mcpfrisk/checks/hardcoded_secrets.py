@@ -17,7 +17,7 @@ import re
 from pathlib import Path
 
 from mcpfrisk.core.base_check import BaseCheck
-from mcpfrisk.core.fs import DEFAULT_EXCLUDED_DIRS, SOURCE_GLOBS, rglob_or_file
+from mcpfrisk.core.fs import SOURCE_GLOBS, is_excluded, rglob_or_file
 from mcpfrisk.core.models import Finding, Severity
 from mcpfrisk.core.sourcetree import SourceModel, analyze, jsts_available
 
@@ -95,7 +95,7 @@ class HardcodedSecretsCheck(BaseCheck):
 
         for ext in extensions:
             for file_path in rglob_or_file(target_path, ext):
-                if self._is_excluded(file_path) or file_path in seen_files:
+                if self._is_excluded(file_path, target_path) or file_path in seen_files:
                     continue
                 seen_files.add(file_path)
 
@@ -197,11 +197,11 @@ class HardcodedSecretsCheck(BaseCheck):
         )
 
     @staticmethod
-    def _is_excluded(path: Path) -> bool:
+    def _is_excluded(path: Path, root: Path) -> bool:
         # .env.example / .env.sample sind Templates, keine echten Secrets
         if path.name in (".env.example", ".env.sample", ".env.template"):
             return True
-        return any(part in DEFAULT_EXCLUDED_DIRS for part in path.parts)
+        return is_excluded(path, root)
 
     def _scan_file(self, file_path: Path) -> list[Finding]:
         findings = []

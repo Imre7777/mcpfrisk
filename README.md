@@ -154,8 +154,42 @@ mcpfrisk scan ./my-mcp-server                       # terminal report
 mcpfrisk scan ./my-mcp-server --json report.json    # machine-readable report
 mcpfrisk scan ./my-mcp-server --fail-on critical    # only CRITICAL blocks the build
 mcpfrisk scan ./my-mcp-server --skip TOOL_POISONING # disable individual checks
+mcpfrisk scan ./my-mcp-server --exclude tests/      # skip paths (repeatable)
 mcpfrisk scan ./my-mcp-server --sarif results.sarif # SARIF for the GitHub Security tab
 ```
+
+<details>
+<summary><b>Excluding paths</b> — <code>.mcpfriskignore</code> and <code>--exclude</code></summary>
+
+<br>
+
+By default McpFrisk scans **everything** except real build/dependency directories
+(`node_modules`, `.venv`, `dist`, `build`, `__pycache__`, `.git`). Test and example
+code is scanned on purpose — a hardcoded secret or command injection in a test
+harness is still a hardcoded secret. Excluding it is a deliberate, visible choice
+you make, never a silent default.
+
+To carve out paths, drop a **`.mcpfriskignore`** in the repo root (gitignore-style;
+blank lines and `#` comments ignored) and/or pass **`--exclude PATTERN`** (repeatable):
+
+```gitignore
+# .mcpfriskignore
+tests/            # a directory anywhere in the tree
+examples/
+**/fixtures      # nested match
+*.min.js          # a glob
+```
+
+```bash
+mcpfrisk scan . --exclude tests/ --exclude '*.min.js'
+```
+
+Patterns combine additively with the file and the defaults. This is also the fix
+for large SDK **monorepos**, where independent example servers reuse tool names
+(`echo`, `greet`) and would otherwise flood `TOOL_NAME_COLLISION` — and it speeds
+up scans by skipping files up front. Negation (`!`) is not supported yet.
+
+</details>
 
 <details>
 <summary><b>Baseline / diff scanning</b> — only NEW findings block the build</summary>

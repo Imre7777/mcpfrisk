@@ -71,6 +71,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Check-IDs, die übersprungen werden sollen, z.B. --skip TOOL_POISONING",
     )
     scan_parser.add_argument(
+        "--exclude", action="append", default=[], metavar="PATTERN",
+        help="Pfadmuster (gitignore-artig, wiederholbar), das vom Scan "
+             "ausgenommen wird, z.B. --exclude tests/ --exclude '*.min.js'. "
+             "Kombiniert additiv mit einer committeten .mcpfriskignore.",
+    )
+    scan_parser.add_argument(
         "--write-tools-baseline", action="store_true",
         help="Pinnt die aktuellen Tool-Beschreibungen als Baseline "
              "(.mcpfrisk-tools.json) für TOOL_DESCRIPTION_DRIFT und beendet ohne "
@@ -234,7 +240,9 @@ def _run_scan(args: argparse.Namespace) -> int:
         return 0
 
     _warn_if_jsts_missing(target_path)
-    result = run_static_scan(target_path, skip_checks=set(args.skip))
+    result = run_static_scan(
+        target_path, skip_checks=set(args.skip), exclude=set(args.exclude)
+    )
     print_terminal_report(result)
 
     if args.json:

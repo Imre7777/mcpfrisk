@@ -30,7 +30,7 @@ import re
 from pathlib import Path
 
 from mcpfrisk.core.base_check import BaseCheck
-from mcpfrisk.core.fs import DEFAULT_EXCLUDED_DIRS, rglob_or_file
+from mcpfrisk.core.fs import is_excluded, rglob_or_file
 from mcpfrisk.core.models import Finding, Severity
 
 # Bekannte MCP-Config-Dateinamen (starkes Signal). Zusätzlich wird JEDE *.json
@@ -152,7 +152,7 @@ class McpConfigAuditCheck(BaseCheck):
             if path in seen:
                 continue
             seen.add(path)
-            if any(part in DEFAULT_EXCLUDED_DIRS for part in path.parts):
+            if is_excluded(path, target_path):
                 continue
             if any(suf in path.name.lower() for suf in _TEMPLATE_SUFFIXES):
                 continue
