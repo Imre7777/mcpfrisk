@@ -99,3 +99,46 @@ class TestJsTsToolPoisoning:
     def test_clean_description_is_clean(self, tmp_path):
         findings = _run(ToolDescriptionPoisoningCheck(), tmp_path, "tool_poisoning_clean.ts")
         assert findings == []
+
+
+class TestExecFalsePositivesRealWorld:
+    """Real-World-Validierung 2026-07: `exec`/`spawn` sind auch harmlose
+    Methodennamen (RegExp.exec, db.exec, command.exec). Nur echte
+    child_process-Aufrufe dürfen CMD_INJECTION auslösen -- sonst FP-Flut auf
+    jedem JS/TS-Repo."""
+
+    def test_regex_exec_is_not_flagged(self, tmp_path):
+        (tmp_path / "a.ts").write_text(
+            "const re = /foo(.*)/;\n"
+            "function f(line: string) { return re.exec(line); }\n",
+            encoding="utf-8",
+        )
+        f = [x for x in CommandInjectionCheck().run(tmp_path) if x.check_id == "CMD_INJECTION"]
+        assert f == []
+
+    def test_object_method_exec_is_not_flagged(self, tmp_path):
+        (tmp_path / "a.ts").write_text(
+            "async function run(db: any, q: string) { return db.exec(q); }\n"
+            "async function r2(command: any, c: any) { return command.exec(c); }\n",
+            encoding="utf-8",
+        )
+        f = [x for x in CommandInjectionCheck().run(tmp_path) if x.check_id == "CMD_INJECTION"]
+        assert f == []
+
+    def test_real_child_process_exec_still_flagged(self, tmp_path):
+        (tmp_path / "a.ts").write_text(
+            'import { exec } from "child_process";\n'
+            "function run(host: string) { return exec(`ping ${host}`); }\n",
+            encoding="utf-8",
+        )
+        f = [x for x in CommandInjectionCheck().run(tmp_path) if x.check_id == "CMD_INJECTION"]
+        assert len(f) >= 1
+
+    def test_child_process_member_exec_still_flagged(self, tmp_path):
+        (tmp_path / "a.ts").write_text(
+            'import cp from "child_process";\n'
+            "function run(host: string) { return cp.exec(`ping ${host}`); }\n",
+            encoding="utf-8",
+        )
+        f = [x for x in CommandInjectionCheck().run(tmp_path) if x.check_id == "CMD_INJECTION"]
+        assert len(f) >= 1

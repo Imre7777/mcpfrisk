@@ -45,6 +45,17 @@ PY_DANGEROUS_CALLS = {
 # enthalten.
 JS_DANGEROUS_SEGMENTS = {"exec", "execSync", "spawn", "spawnSync"}
 
+# ...ABER `exec`/`spawn` sind auch Methodennamen völlig harmloser Objekte:
+# `regex.exec(str)`, `pattern.exec(line)` (RegExp), `db.exec(sql)` (SQLite/ORM),
+# `command.exec(client)`. Ein reiner Segment-Match flaggte all das fälschlich als
+# Command Injection -- eine massive FP-Quelle auf JEDEM echten JS/TS-Repo
+# (Real-World-Validierung 2026-07). Ein Member-Aufruf `X.exec(...)` gilt daher nur
+# als gefährlich, wenn `X` child_process (oder ein geläufiger Alias) ist; ein
+# nackter `exec(...)`/`spawn(...)` gilt als das importierte child_process-API.
+_CHILD_PROCESS_RECEIVERS = frozenset(
+    {"child_process", "childprocess", "cp", "node:child_process"}
+)
+
 # Fallback (nur wenn das jsts-Extra fehlt): die bisherigen Zeilen-Regexe.
 JS_DANGEROUS_PATTERNS = [
     re.compile(r"exec(?:Async)?\s*\(\s*[`\"'].*\$\{"),
@@ -103,7 +114,18 @@ class CommandInjectionCheck(BaseCheck):
             return False
         if language is SourceLanguage.PYTHON:
             return callee in PY_DANGEROUS_CALLS
-        return callee.rsplit(".", 1)[-1] in JS_DANGEROUS_SEGMENTS
+        # JS/TS
+        seg = callee.rsplit(".", 1)[-1]
+        if seg not in JS_DANGEROUS_SEGMENTS:
+            return False
+        if "." not in callee:
+            # nackter exec()/execSync()/spawn()/spawnSync() -> das aus
+            # child_process importierte API (Import-Alias ist bereits aufgelöst).
+            return True
+        # Member-Aufruf X.exec(...): nur gefährlich, wenn X child_process ist --
+        # NICHT regex.exec / db.exec / command.exec (harmlose Methoden gleichen Namens).
+        receiver = callee.rsplit(".", 1)[0].rsplit(".", 1)[-1].lower()
+        return receiver in _CHILD_PROCESS_RECEIVERS
 
     def _assess(
         self, language: SourceLanguage, call: CallSite
