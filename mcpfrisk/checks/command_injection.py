@@ -45,6 +45,19 @@ PY_DANGEROUS_CALLS = {
 # enthalten.
 JS_DANGEROUS_SEGMENTS = {"exec", "execSync", "spawn", "spawnSync"}
 
+# exec/execSync führen ihr erstes Argument IMMER über eine Shell aus (/bin/sh -c
+# <arg>). spawn/spawnSync starten dagegen ein Programm direkt (execvp), die
+# Argumente stehen als separate argv-Elemente in einem Array -- KEINE Shell,
+# außer man setzt explizit `{shell: true}`. `spawn(cmd, [args])` ist damit die
+# von Node empfohlene, sichere Form und darf NICHT wie exec bewertet werden
+# (Real-World-FP 2026-07: die sichere Standardform wurde als HIGH geflaggt).
+_JS_SPAWN_FAMILY = frozenset({"spawn", "spawnSync"})
+
+# `shell: true` steht in JS als Objekt-Literal-Argument (Options), NICHT in
+# call.keywords. Bewusst großzügig gematcht -- `shell: <dynamischer Ausdruck>`
+# (statt Literal true) ist ein seltener, dokumentierter Sonderfall (Nicht-Ziel).
+_JS_SHELL_TRUE_RE = re.compile(r"shell\s*:\s*true\b")
+
 # ...ABER `exec`/`spawn` sind auch Methodennamen völlig harmloser Objekte:
 # `regex.exec(str)`, `pattern.exec(line)` (RegExp), `db.exec(sql)` (SQLite/ORM),
 # `command.exec(client)`. Ein reiner Segment-Match flaggte all das fälschlich als
@@ -206,11 +219,13 @@ class CommandInjectionCheck(BaseCheck):
                 )
             return None, ""
 
-        # JS/TS: exec()/execSync()/spawn() öffnen eine Shell, execFile() nicht.
+        # JS/TS: exec()/execSync() öffnen IMMER eine Shell; spawn()/spawnSync()
+        # nur bei {shell: true}; execFile() nie (gar nicht geflaggt).
         if first.is_constant_string:
             # spawn("sh", ["-c", tainted]) / spawn("bash", [...]) -- der
             # Interpreter-Name als args[0] öffnet die Shell, das eigentliche
-            # gefährliche Element steckt im zweiten (Array-)Argument.
+            # gefährliche Element steckt im zweiten (Array-)Argument. Gilt für
+            # alle Familien unabhängig von der shell-Option.
             interpreter = self._shell_literal(first.text)
             second = call.args[1] if len(call.args) > 1 else None
             if (
@@ -230,6 +245,16 @@ class CommandInjectionCheck(BaseCheck):
             return None, ""
         if first.is_array:
             return None, ""
+
+        # Ab hier ist das erste Argument interpoliert oder eine Variable (evtl.
+        # tainted). Für spawn/spawnSync OHNE {shell: true} ist das ein
+        # Programm*name*, kein Shell-Kommando -- es wird keine Shell gestartet,
+        # also keine Command Injection. Nur exec/execSync (immer Shell) oder
+        # spawn(..., {shell: true}) fließen weiter in die Shell-Risiko-Policy.
+        seg = call.callee.rsplit(".", 1)[-1]
+        if seg in _JS_SPAWN_FAMILY and not self._js_has_shell_true(call):
+            return None, ""
+
         if first.has_interpolation:
             return (
                 Severity.HIGH,
@@ -243,6 +268,15 @@ class CommandInjectionCheck(BaseCheck):
                 "(teilweise) aus Eingaben stammt, ist das Command Injection.",
             )
         return None, ""
+
+    @staticmethod
+    def _js_has_shell_true(call: CallSite) -> bool:
+        """True, wenn ein Argument (das Options-Objekt) `shell: true` enthält.
+
+        In JS steht die Option NICHT in call.keywords, sondern als Objekt-Literal
+        in call.args. Text-basiert geprüft; `shell: <dynamisch>` wird nicht als
+        Shell gewertet (seltener, dokumentierter Sonderfall)."""
+        return any(_JS_SHELL_TRUE_RE.search(a.text or "") for a in call.args)
 
     @staticmethod
     def _shell_literal(text: str) -> str | None:

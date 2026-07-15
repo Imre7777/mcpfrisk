@@ -21,7 +21,7 @@
 
 Bugs, die auf **korrektem** Nutzercode falsch anschlagen oder echte Lücken lassen. Das ist das Peinlichste, deshalb zuerst.
 
-### 0.1 ☐ `P0` `S` — spawn-mit-Array False Positive (Feature 023)
+### 0.1 ☑ `P0` `S` — spawn-mit-Array False Positive (Feature 023) — **ERLEDIGT** (`main`, 2026-07-15)
 - **Problem:** JS/TS `spawn(cmd, [args])` **ohne** `shell:true` ist die *sichere*, empfohlene Form, wird aber als HIGH CMD_INJECTION geflaggt.
 - **Ursache:** `checks/command_injection.py::_assess` behandelt `exec` (immer über Shell) und `spawn` (nur bei `shell:true` gefährlich) gleich.
 - **Fix:** `exec`/`execSync` = immer Shell → gefährlich bei dynamischem Input. `spawn`/`execFile` = nur gefährlich, wenn `shell:true` im options-Objekt steht. Analog zur bereits existierenden Python-Logik (`subprocess` mit/ohne `shell=True`).
