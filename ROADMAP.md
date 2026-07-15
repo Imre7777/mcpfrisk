@@ -39,32 +39,34 @@ Bugs, die auf **korrektem** Nutzercode falsch anschlagen oder echte Lücken lass
 
 ---
 
-## Phase 1 — „Nicht blamieren"-Härtung (P1)
+## Phase 1 — „Nicht blamieren"-Härtung (P1) — **ERLEDIGT** (Feature 024, `main`, 2026-07-15)
 
 Der Block, der Vertrauen schafft: Plattform-Nachweis + das Tool muss selbst vorbildlich sein.
 
-### 1.1 ☐ `P1` `S` — CI-Matrix auf Windows + macOS erweitern
+### 1.1 ☑ `P1` `S` — CI-Matrix auf Windows + macOS erweitern
 - **Warum:** Entwickelt auf Windows, CI läuft nur `ubuntu-latest`. Pfad-Logik (`pathlib`, `fnmatch`, das frische `is_excluded` aus 022) ist auf `\` vs `/` empfindlich — ohne Windows-CI würde ein Pfad-Bug unentdeckt durchrutschen.
 - **Umsetzung:** `strategy.matrix.os: [ubuntu-latest, windows-latest, macos-latest]` für den `test`-Job (ggf. Python-Versionen auf den Nicht-Linux-OS reduzieren, um Minuten zu sparen).
 - **Akzeptanz:** grüne Suite auf allen drei OS; besonders `test_scan_exclusions.py` auf Windows.
 
-### 1.2 ☐ `P1` `S` — Self-Scan als CI-Gate (Dogfooding auf echtem Code)
+### 1.2 ☑ `P1` `S` — Self-Scan als CI-Gate (Dogfooding auf echtem Code)
 - **Warum:** Ein Security-Tool, das seinen eigenen Code scannt und sauber ist, ist das stärkste Vertrauenssignal. Verifiziert: `mcpfrisk scan mcpfrisk/` ist aktuell **clean**.
 - **Umsetzung:** CI-Schritt `mcpfrisk scan mcpfrisk/ --fail-on medium` (echter Code, nicht nur Fixtures). Bei künftigem Fund: entweder echter Bug (fixen) oder begründete Baseline.
 - **Akzeptanz:** CI-Job schlägt fehl, wenn der eigene Code je ein Finding ≥ MEDIUM bekommt.
 
-### 1.3 ☐ `P1` `S` — Supply-Chain-Sicherheit des eigenen Repos
+### 1.3 ☑ `P1` `S` — Supply-Chain-Sicherheit des eigenen Repos
 - **Warum:** Wir predigen DEPENDENCY_SCAN/PACKAGE_PROVENANCE — müssen es vorleben.
 - **Umsetzung:**
-  - `pip-audit` (oder OSV-Scanner) auf die eigenen (Dev-)Deps in CI.
-  - **CodeQL** auf unseren Python-Code (`github/codeql-action`, kostenlos für public Repos — greift, sobald public).
-  - `.github/dependabot.yml`: wöchentliche Updates für `pip` + `github-actions`.
-- **Akzeptanz:** grüner `pip-audit`-Job; CodeQL-Workflow vorhanden (aktiv ab public); Dependabot konfiguriert.
+  - ☑ `pip-audit`-Job auf `.[jsts]` (unsere reale Laufzeit-Lieferkette).
+  - ◐ **CodeQL** (`.github/workflows/codeql.yml`) — angelegt, aber **dormant**
+    (`workflow_dispatch`), weil das Repo privat **ohne GHAS** ist (Upload würde
+    fehlschlagen → CI rot). **TODO beim Public-Gang:** Trigger auf `push`/`pull_request`/`schedule` umstellen (Kommentar in der Datei).
+  - ☑ `.github/dependabot.yml`: wöchentlich `pip` + `github-actions`.
+- **Akzeptanz:** grüner `pip-audit`-Job ✅; CodeQL-Workflow vorhanden (aktiv ab public) ✅; Dependabot konfiguriert ✅.
 
-### 1.4 ☐ `P1` `S` — GitHub Actions pinnen (eigene Lieferkette härten)
+### 1.4 ☑ `P1` `S` — GitHub Actions pinnen (eigene Lieferkette härten)
 - **Warum:** `uses: actions/checkout@v4` ist ein bewegliches Tag; Best Practice für sicherheitskritische Repos ist SHA-Pinning.
-- **Umsetzung:** alle `uses:`-Einträge in `ci.yml`/`action.yml` auf commit-SHA pinnen (mit Kommentar der Version); Dependabot hält sie aktuell.
-- **Akzeptanz:** keine beweglichen Tags mehr in Workflows.
+- **Umsetzung:** ☑ alle `uses:` in `ci.yml`/`codeql.yml`/`action.yml` auf vollen Commit-SHA gepinnt (autoritativ via `gh api` aufgelöst, `# vX`-Kommentar); Dependabot hält sie aktuell.
+- **Akzeptanz:** keine beweglichen Tags mehr in Workflows ✅.
 
 ---
 

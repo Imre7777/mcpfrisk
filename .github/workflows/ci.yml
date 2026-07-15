@@ -6,12 +6,17 @@ on:
   pull_request:
     branches: [main]
 
+# Actions sind bewusst auf volle Commit-SHAs gepinnt (Supply-Chain-Härtung eines
+# Security-Tools): ein bewegliches Tag wie @v4 könnte sich still ändern. Der
+# `# vX`-Kommentar hält die Lesbarkeit; Dependabot (github-actions) aktualisiert
+# die SHAs kontrolliert per PR.
+
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Install ruff
@@ -20,16 +25,34 @@ jobs:
         run: ruff check .
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      # Ein OS-Fehlschlag soll die anderen Matrix-Zweige NICHT abbrechen -- wir
+      # wollen das vollständige Cross-Platform-Bild sehen.
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python-version: ["3.10", "3.11", "3.12"]
+        # Linux trägt die volle Python-Matrix; Windows und macOS je einmal auf
+        # der aktuellsten unterstützten Version (Plattform-Nachweis: Pfad-Logik
+        # \ vs /, besonders der is_excluded/Ignore-Code aus Feature 022).
+        include:
+          - os: windows-latest
+            python-version: "3.12"
+          - os: macos-latest
+            python-version: "3.12"
+
+    # Alle run-Schritte über bash -- auch auf Windows-Runnern (bringen Git-Bash
+    # mit), damit die bash-basierten Dogfood-Schritte portabel bleiben.
+    defaults:
+      run:
+        shell: bash
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -38,6 +61,14 @@ jobs:
 
       - name: Run test suite
         run: pytest tests/ -v --cov=mcpfrisk --cov-report=term-missing --cov-fail-under=88
+
+      # Dogfooding: mcpfrisk scannt seinen EIGENEN Quellcode und muss sauber sein.
+      # Das ist das stärkste Vertrauenssignal für ein Security-Tool. Bewusst nur
+      # `mcpfrisk/` (echter Code), NICHT `.` -- das Repo enthält absichtlich
+      # verwundbare tests/fixtures/. Läuft auf allen drei OS und prüft damit
+      # zugleich die Pfad-Behandlung des echten Scans unter Windows/macOS.
+      - name: Dogfood -- self-scan our own source must stay clean
+        run: mcpfrisk scan mcpfrisk/ --fail-on medium
 
       # Dogfooding: mcpfrisk scannt seine eigenen Test-Fixtures und
       # demonstriert in den CI-Logs, dass die Findings wie erwartet kommen.
@@ -58,6 +89,23 @@ jobs:
         run: |
           mcpfrisk scan tests/fixtures/jsts/tool_poisoning_vuln.ts --fail-on critical || true
 
+  # Supply-Chain-Selbstprüfung: Wir predigen DEPENDENCY_SCAN/PACKAGE_PROVENANCE --
+  # also auditieren wir unsere eigene (reale) Lieferkette gegen bekannte
+  # Advisories. Der Kern ist zero-dep; die einzige echte Laufzeit-Lieferkette ist
+  # das jsts-Extra (tree-sitter). Bewusst blockierend: ein Advisory soll sichtbar
+  # sein, nicht stillschweigend durchgehen.
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install runtime supply chain + pip-audit
+        run: pip install -e ".[jsts]" pip-audit
+      - name: Audit dependencies for known vulnerabilities
+        run: pip-audit
+
   # Eigenständiger Job OHNE das jsts-Extra: stellt sicher, dass der Basis-Install
   # ohne tree-sitter weder beim Import noch beim Scan crasht und JS/TS-Dateien
   # sauber übersprungen werden (nie fälschlich als "clean"). Die jsts-markierten
@@ -66,10 +114,10 @@ jobs:
   test-without-jsts:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
@@ -104,7 +152,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Prepare an isolated clean-fixture directory
         run: |
