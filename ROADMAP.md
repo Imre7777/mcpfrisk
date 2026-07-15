@@ -43,10 +43,10 @@ Bugs, die auf **korrektem** Nutzercode falsch anschlagen oder echte Lücken lass
 
 Der Block, der Vertrauen schafft: Plattform-Nachweis + das Tool muss selbst vorbildlich sein.
 
-### 1.1 ☑ `P1` `S` — CI-Matrix auf Windows + macOS erweitern
-- **Warum:** Entwickelt auf Windows, CI läuft nur `ubuntu-latest`. Pfad-Logik (`pathlib`, `fnmatch`, das frische `is_excluded` aus 022) ist auf `\` vs `/` empfindlich — ohne Windows-CI würde ein Pfad-Bug unentdeckt durchrutschen.
-- **Umsetzung:** `strategy.matrix.os: [ubuntu-latest, windows-latest, macos-latest]` für den `test`-Job (ggf. Python-Versionen auf den Nicht-Linux-OS reduzieren, um Minuten zu sparen).
-- **Akzeptanz:** grüne Suite auf allen drei OS; besonders `test_scan_exclusions.py` auf Windows.
+### 1.1 ☑ `P1` `S` — Windows/macOS-Plattform-Nachweis (kostenbewusst)
+- **Warum:** Entwickelt auf Windows, CI lief nur `ubuntu-latest`. Pfad-Logik (`pathlib`, `fnmatch`, das frische `is_excluded` aus 022) ist auf `\` vs `/` empfindlich.
+- **Umsetzung (kostenbewusst, nach Nutzer-Feedback):** Push-/PR-CI läuft NUR auf ubuntu (3.10/3.11/3.12). Windows + macOS laufen in einem separaten Workflow `.github/workflows/cross-platform.yml` **wöchentlich** (Montag) + `workflow_dispatch` — weil macOS-Runner auf privaten Repos 10x und Windows 2x Minuten kosten. Cross-OS bei jedem Push wäre Verschwendung.
+- **Akzeptanz:** grüne Suite auf allen drei OS (ubuntu bei jedem Push, win/mac wöchentlich).
 
 ### 1.2 ☑ `P1` `S` — Self-Scan als CI-Gate (Dogfooding auf echtem Code)
 - **Warum:** Ein Security-Tool, das seinen eigenen Code scannt und sauber ist, ist das stärkste Vertrauenssignal. Verifiziert: `mcpfrisk scan mcpfrisk/` ist aktuell **clean**.

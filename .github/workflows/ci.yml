@@ -24,26 +24,18 @@ jobs:
       - name: Lint (ruff)
         run: ruff check .
 
+  # Push-/PR-CI läuft bewusst NUR auf ubuntu (schnell + günstig). Der
+  # Plattform-Nachweis für Windows/macOS läuft separat und nur WÖCHENTLICH
+  # (.github/workflows/cross-platform.yml) -- auf privaten Repos kosten
+  # Windows-Runner 2x und macOS-Runner 10x Minuten, das wollen wir nicht bei
+  # jedem Commit verbrennen.
   test:
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
-      # Ein OS-Fehlschlag soll die anderen Matrix-Zweige NICHT abbrechen -- wir
-      # wollen das vollständige Cross-Platform-Bild sehen.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
         python-version: ["3.10", "3.11", "3.12"]
-        # Linux trägt die volle Python-Matrix; Windows und macOS je einmal auf
-        # der aktuellsten unterstützten Version (Plattform-Nachweis: Pfad-Logik
-        # \ vs /, besonders der is_excluded/Ignore-Code aus Feature 022).
-        include:
-          - os: windows-latest
-            python-version: "3.12"
-          - os: macos-latest
-            python-version: "3.12"
 
-    # Alle run-Schritte über bash -- auch auf Windows-Runnern (bringen Git-Bash
-    # mit), damit die bash-basierten Dogfood-Schritte portabel bleiben.
     defaults:
       run:
         shell: bash
