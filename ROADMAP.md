@@ -113,10 +113,10 @@ Standard-Signale für „ernstes Open-Source-Projekt". Größtenteils ein Nachmi
 - **Umsetzung:** stdlib-Fuzz (fester Seed, deterministisch) statt hypothesis (bewusst: keine externe Dev-Dep, Zero-Dep-Ethos). Adversarialer Input gegen `is_excluded`/`exclude_context`, `load_ignore_patterns`, `analyze()` (py/ts/js + Binärmüll) und `run_static_scan` (ganzer Müll-Baum).
 - **Ergebnis:** 8 Fuzz-Tests grün, **kein Crash gefunden** — die Kapselungs-/Degradations-Architektur hält. Als Regression zementiert.
 
-### 3.3 ☐ `P2` `M` — Mutation-Testing
-- **Warum:** 90 % Coverage ≠ 90 % Aussagekraft. Mutation-Testing zeigt, ob Tests echte Regressionen fangen.
-- **Umsetzung:** `mutmut` oder `cosmic-ray` auf `mcpfrisk/checks/` + `core/`. Überlebende Mutanten → Testlücken schließen.
-- **Akzeptanz:** dokumentierte Mutation-Score; kritische Check-Logik ohne überlebende Mutanten.
+### 3.3 ⏸ `P2` `M` — Mutation-Testing — **VERTAGT** (Tooling + Laufzeit)
+- **Warum vertagt (Nutzer-Entscheidung 2026-07-15):** braucht ein externes Tool (`mutmut`/`cosmic-ray`), das im aktuellen Env nicht ausführbar ist (kein pip im venv), UND ist sehr teuer (volle Suite pro Mutant → Stunden). Reines P2. Wieder aufgreifen, wenn der Release ansteht (dann als dedizierter, seltener CI-Job).
+- **Umsetzung (offen):** `mutmut` auf `mcpfrisk/checks/` + `core/`; überlebende Mutanten → Testlücken schließen.
+- **Akzeptanz (offen):** dokumentierter Mutation-Score; kritische Check-Logik ohne überlebende Mutanten.
 
 ### 3.4 ☑ `P2` `S` — Performance-Regressionstest (Feature 030) — **ERLEDIGT** (`main`, 2026-07-15)
 - **Warum:** python-sdk (815 Dateien) lief >90 s in Timeout. Nach 022 (Excludes) + 026 (Scoping) besser; Budget-Test verhindert Rückfall.
@@ -129,10 +129,11 @@ Standard-Signale für „ernstes Open-Source-Projekt". Größtenteils ein Nachmi
 
 Die Zahlen, an denen Reviewer uns messen. Alles reproduzierbar + provenance-getaggt (bestehende Linie fortführen).
 
-### 4.1 ☐ `P1` `L` — Real-World-Korpus auf 30–50 Server erweitern
-- **Warum:** Dein „100 % auf Nummer sicher". Bisher 13, manuell.
-- **Umsetzung:** `benchmark/realworld_corpus.py` — Liste echter MCP-Server (offizielles `modelcontextprotocol/servers`-Verzeichnis + glama.ai/smithery-Registries), jeweils auf **Commit-SHA gepinnt**, klonen → scannen → Findings triagieren → als JSON persistieren. Nachvollziehbar, kein Handklonen.
-- **Akzeptanz:** Skript reproduziert den Korpus deterministisch; Ergebnisse in `benchmark/REALWORLD.md` mit Provenance.
+### 4.1 ◐ `P1` `L` — Reproduzierbarer Real-World-Korpus (Feature 031) — **HARNESS + 14 Server FERTIG** (`main`, 2026-07-15)
+- **Warum:** Dein „100 % auf Nummer sicher". Vorher 13, manuell/HEAD (nicht reproduzierbar).
+- **Umsetzung:** `benchmark/realworld_corpus.py` — 14 echte MCP-Server auf **Commit-SHA gepinnt** (`git ls-remote`), Shallow-Fetch → `python -m mcpfrisk scan --json` (Test-/Doku-Bäume via `--exclude`) → `REALWORLD.md` + `realworld.json` mit Provenance. Reproduzierbar, kein Handklonen.
+- **Ergebnis:** 51 Findings über 14 Server; 7 davon 0-Finding. Bestätigt die Fixes: TOOL_NAME_COLLISION 83→3, CMD_INJECTION-Flut weg. PATH_TRAVERSAL:35 = nächster Triage-Kandidat.
+- **Offen (4.4):** Manifest Richtung 30–50 erweitern; PATH_TRAVERSAL-Funde triagieren.
 
 ### 4.2 ☐ `P1` `M` — Harte Precision/Recall/F1-Tabelle
 - **Warum:** „Warum euch statt Semgrep?" braucht Zahlen, keine Behauptung.
