@@ -125,7 +125,11 @@ def write_dynamic_json_report(result: DynamicScanResult, output_path: Path) -> N
         "boundary_results": [b.to_dict() for b in result.boundary_results],
         "summary": {sev.value: len(result.by_severity(sev)) for sev in Severity},
     }
-    output_path.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    # ensure_ascii=False lässt nicht-ASCII (deutsche Finding-Texte) als echte
+    # Zeichen; dann MUSS explizit UTF-8 geschrieben werden -- sonst nimmt
+    # write_text die Plattform-Default-Kodierung (cp1252 auf Windows) und der
+    # Report ist kein gültiges UTF-8.
+    output_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def write_json_report(result: ScanResult, output_path: Path) -> None:
@@ -138,4 +142,5 @@ def write_json_report(result: ScanResult, output_path: Path) -> None:
             sev.value: len(result.by_severity(sev)) for sev in Severity
         },
     }
-    output_path.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    # UTF-8 explizit (siehe write_dynamic_json_report): sonst cp1252 auf Windows.
+    output_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")

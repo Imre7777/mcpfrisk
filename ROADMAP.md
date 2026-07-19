@@ -37,6 +37,11 @@ Bugs, die auf **korrektem** Nutzercode falsch anschlagen oder echte Lücken lass
 - **Fix:** `mcpfrisk/__main__.py` mit `from mcpfrisk.cli import main; main()`.
 - **Akzeptanz:** `python -m mcpfrisk scan .` läuft; Test deckt es ab.
 
+### 0.4 ☑ `P1` `S` — JSON-Report war nicht UTF-8 (Feature 027) — **ERLEDIGT** (`main`, 2026-07-15)
+- **Problem:** `write_json_report`/`write_dynamic_json_report` schrieben mit `ensure_ascii=False`, aber **ohne** `encoding="utf-8"` → auf Windows cp1252; deutsche Finding-Texte (ü/ä/ö) landeten als cp1252-Bytes, kein gültiges UTF-8. Entdeckt bei der 026-Real-World-Analyse.
+- **Fix:** `encoding="utf-8"` an beide Writer. (SARIF/Baseline waren bereits korrekt.)
+- **Akzeptanz:** Regressionstest (UTF-8-Bytes 0xC3 0xBC, kein 0xFC) grün; vorher auf Windows rot.
+
 ---
 
 ## Phase 1 — „Nicht blamieren"-Härtung (P1) — **ERLEDIGT** (Feature 024, `main`, 2026-07-15)
