@@ -118,10 +118,10 @@ Standard-Signale für „ernstes Open-Source-Projekt". Größtenteils ein Nachmi
 - **Umsetzung:** `mutmut` oder `cosmic-ray` auf `mcpfrisk/checks/` + `core/`. Überlebende Mutanten → Testlücken schließen.
 - **Akzeptanz:** dokumentierte Mutation-Score; kritische Check-Logik ohne überlebende Mutanten.
 
-### 3.4 ☐ `P2` `S` — Performance-Regressionstest
-- **Warum:** python-sdk (815 Dateien) lief >90 s in Timeout. Nach 022 (Excludes) besser, aber ein Budget-Test verhindert Rückfall.
-- **Umsetzung:** großer synthetischer Monorepo-Fixture + Zeit-/Datei-Budget-Assertion (großzügig, gegen katastrophale Regression, nicht Mikro-Benchmark).
-- **Akzeptanz:** Test schlägt fehl, wenn ein Check auf N Dateien ein Zeitbudget reißt.
+### 3.4 ☑ `P2` `S` — Performance-Regressionstest (Feature 030) — **ERLEDIGT** (`main`, 2026-07-15)
+- **Warum:** python-sdk (815 Dateien) lief >90 s in Timeout. Nach 022 (Excludes) + 026 (Scoping) besser; Budget-Test verhindert Rückfall.
+- **Umsetzung:** 300 synthetische, realistische Server-Dateien; `run_static_scan` muss in < 40s durchlaufen (lokal ~6s → ~7x Puffer). Bewusst großzügig, nicht flaky; zusätzlich Findings-Assertion (kein Leerlauf).
+- **Akzeptanz:** Test grün; reißt nur bei katastrophaler Regression (Hang/O(n²)/Per-Datei-Blowup).
 
 ---
 
