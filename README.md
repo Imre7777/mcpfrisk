@@ -99,7 +99,7 @@ mcpfrisk scan ./path/to/server
 Runnable without installing:
 
 ```bash
-python3 -m mcpfrisk.cli scan ./path/to/server
+python3 -m mcpfrisk scan ./path/to/server
 ```
 
 Exit code `0` = passed, `1` = findings above the `--fail-on` threshold (default: `HIGH`).

@@ -32,10 +32,10 @@ Bugs, die auf **korrektem** Nutzercode falsch anschlagen oder echte Lücken lass
 - **Fix:** Kollision nur innerhalb einer **Datei** werten (= Server-Boundary). **Evidenzbasiert**: erst Verzeichnis-Scope getestet, aber Real-World-Daten (python-sdk-Tutorials teilen flach ein Verzeichnis; mcp-atlassian nutzt getrennte `confluence_mcp`/`jira_mcp`) zeigten, dass Datei die richtige Grenze ist. **Alle** beobachteten FP waren cross-file.
 - **Ergebnis:** cross-file-FP-Flut → **0**. python-sdk 53→25 (Rest = same-file in `test_*.py` → Sache von `--exclude`), mcp-atlassian 6→3 (LOW-Near-Dups in echten Server-Dateien). Same-file-Duplikate bleiben erfasst. 376 Tests grün.
 
-### 0.3 ☐ `P2` `S` — `python -m mcpfrisk` funktioniert nicht
-- **Problem:** Kein `mcpfrisk/__main__.py`; nur `python -m mcpfrisk.cli` läuft. README nennt korrekt `mcpfrisk.cli`, aber `python -m mcpfrisk` ist die erwartete Konvention.
-- **Fix:** `mcpfrisk/__main__.py` mit `from mcpfrisk.cli import main; main()`.
-- **Akzeptanz:** `python -m mcpfrisk scan .` läuft; Test deckt es ab.
+### 0.3 ☑ `P2` `S` — `python -m mcpfrisk` funktioniert (Feature 028) — **ERLEDIGT** (`main`, 2026-07-15)
+- **Problem:** Kein `mcpfrisk/__main__.py`; nur `python -m mcpfrisk.cli` lief. `python -m mcpfrisk` ist die erwartete Konvention.
+- **Fix:** `mcpfrisk/__main__.py` (delegiert an `cli.main()`); README-„Runnable without installing" auf `python3 -m mcpfrisk` umgestellt.
+- **Akzeptanz:** `python -m mcpfrisk --version` → 0; nicht-existenter Pfad → 2; Subprozess-Tests grün.
 
 ### 0.4 ☑ `P1` `S` — JSON-Report war nicht UTF-8 (Feature 027) — **ERLEDIGT** (`main`, 2026-07-15)
 - **Problem:** `write_json_report`/`write_dynamic_json_report` schrieben mit `ensure_ascii=False`, aber **ohne** `encoding="utf-8"` → auf Windows cp1252; deutsche Finding-Texte (ü/ä/ö) landeten als cp1252-Bytes, kein gültiges UTF-8. Entdeckt bei der 026-Real-World-Analyse.
