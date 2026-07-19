@@ -1,0 +1,173 @@
+{
+  "provenance": {
+    "generated_at": "2026-07-19T12:01:25.299690+00:00",
+    "git_commit": "67ec43f2a3e52b21a52bafb643d51d605f38a70f",
+    "git_commit_short": "67ec43f",
+    "git_working_tree_clean_relevant": true,
+    "mcpfrisk_version": "0.1.0",
+    "python": "3.13.3",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "excludes": [
+      "tests",
+      "test",
+      "__tests__",
+      "e2e",
+      "examples",
+      "example",
+      "docs",
+      "docs_src",
+      "sample",
+      "samples",
+      "fixtures"
+    ]
+  },
+  "results": [
+    {
+      "name": "context7",
+      "lang": "ts",
+      "url": "https://github.com/upstash/context7",
+      "sha": "23843e9ce62908896cf2dcd32cc5c03c05047416",
+      "status": "ok",
+      "total": 13,
+      "by_check": {
+        "PATH_TRAVERSAL": 8,
+        "MCP_CONFIG_AUDIT": 5
+      }
+    },
+    {
+      "name": "mcp-atlassian",
+      "lang": "py",
+      "url": "https://github.com/sooperset/mcp-atlassian",
+      "sha": "b60c564ce4c8b88edc78a7c34d2e9693ea893e16",
+      "status": "ok",
+      "total": 5,
+      "by_check": {
+        "PATH_TRAVERSAL": 2,
+        "TOOL_NAME_COLLISION": 3
+      }
+    },
+    {
+      "name": "firecrawl-mcp",
+      "lang": "ts",
+      "url": "https://github.com/mendableai/firecrawl-mcp-server",
+      "sha": "3eb1115b1f2883ff2fb74e61b5c4acf5a9ac0fb0",
+      "status": "ok",
+      "total": 0,
+      "by_check": {}
+    },
+    {
+      "name": "tavily-mcp",
+      "lang": "ts",
+      "url": "https://github.com/tavily-ai/tavily-mcp",
+      "sha": "259bfd205de90d74a131e9d2b29cb69ebe11feb7",
+      "status": "ok",
+      "total": 0,
+      "by_check": {}
+    },
+    {
+      "name": "qdrant-mcp",
+      "lang": "py",
+      "url": "https://github.com/qdrant/mcp-server-qdrant",
+      "sha": "f1a4d04e4f91c4d3e2b7c63d5283f3f4338fd2e5",
+      "status": "ok",
+      "total": 0,
+      "by_check": {}
+    },
+    {
+      "name": "chroma-mcp",
+      "lang": "py",
+      "url": "https://github.com/chroma-core/chroma-mcp",
+      "sha": "98ff67589bdcc31b730a5415ff9529433f949077",
+      "status": "ok",
+      "total": 0,
+      "by_check": {}
+    },
+    {
+      "name": "playwright-mcp",
+      "lang": "ts",
+      "url": "https://github.com/microsoft/playwright-mcp",
+      "sha": "55679f5f3d4b4f3e2534ec0ce2fc5683ba2eaf3f",
+      "status": "ok",
+      "total": 0,
+      "by_check": {}
+    },
+    {
+      "name": "mcp-playwright",
+      "lang": "ts",
+      "url": "https://github.com/executeautomation/mcp-playwright",
+      "sha": "2349c2891e7c499c8c07b7d78c7f3fb4c797a1da",
+      "status": "ok",
+      "total": 1,
+      "by_check": {
+        "MCP_CONFIG_AUDIT": 1
+      }
+    },
+    {
+      "name": "figma-mcp",
+      "lang": "ts",
+      "url": "https://github.com/GLips/Figma-Context-MCP",
+      "sha": "c083d65c7e002923e7cb98f4e3bdafb105e90f6d",
+      "status": "ok",
+      "total": 3,
+      "by_check": {
+        "CMD_INJECTION": 1,
+        "PATH_TRAVERSAL": 2
+      }
+    },
+    {
+      "name": "elastic-mcp",
+      "lang": "ts",
+      "url": "https://github.com/elastic/mcp-server-elasticsearch",
+      "sha": "9e64b842f22269eb214793e1a4885128dc4a8fd8",
+      "status": "ok",
+      "total": 0,
+      "by_check": {}
+    },
+    {
+      "name": "llamacloud-mcp",
+      "lang": "py",
+      "url": "https://github.com/run-llama/llamacloud-mcp",
+      "sha": "ebc66ba1c0b772cc3eced4db170c3e7eb9679f1e",
+      "status": "ok",
+      "total": 2,
+      "by_check": {
+        "MCP_CONFIG_AUDIT": 2
+      }
+    },
+    {
+      "name": "python-sdk",
+      "lang": "py",
+      "url": "https://github.com/modelcontextprotocol/python-sdk",
+      "sha": "3a6f2996cdd8358957479791e8b26198c07d6a75",
+      "status": "ok",
+      "total": 2,
+      "by_check": {
+        "CMD_INJECTION": 2
+      }
+    },
+    {
+      "name": "typescript-sdk",
+      "lang": "ts",
+      "url": "https://github.com/modelcontextprotocol/typescript-sdk",
+      "sha": "f60dff0674954ab516739f21ad9905349c8e9249",
+      "status": "ok",
+      "total": 16,
+      "by_check": {
+        "CMD_INJECTION": 1,
+        "PATH_TRAVERSAL": 15
+      }
+    },
+    {
+      "name": "servers",
+      "lang": "mixed",
+      "url": "https://github.com/modelcontextprotocol/servers",
+      "sha": "d31124c982401739917fd817c2a59db344529c16",
+      "status": "ok",
+      "total": 9,
+      "by_check": {
+        "PATH_TRAVERSAL": 8,
+        "MCP_CONFIG_AUDIT": 1
+      }
+    }
+  ]
+}
