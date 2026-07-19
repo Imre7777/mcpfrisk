@@ -27,10 +27,10 @@ Bugs, die auf **korrektem** Nutzercode falsch anschlagen oder echte Lücken lass
 - **Fix:** `exec`/`execSync` = immer Shell → gefährlich bei dynamischem Input. `spawn`/`execFile` = nur gefährlich, wenn `shell:true` im options-Objekt steht. Analog zur bereits existierenden Python-Logik (`subprocess` mit/ohne `shell=True`).
 - **Akzeptanz:** roter Test `spawn("git", [userInput])` → **kein** Finding; `spawn("sh", ["-c", userInput])` und `spawn(cmd, args, {shell:true})` → weiterhin Finding. Regressionstest gegen die 13 Real-World-Repos: CMD_INJECTION-Zahl sinkt, keine echte Lücke geht verloren.
 
-### 0.2 ☐ `P1` `M` — TOOL_NAME_COLLISION Server-Scoping (Feature 024)
-- **Problem:** Kollisionen werden global über die ganze Codebase gewertet; in SDK-Monorepos kollidieren `echo`/`greet`/`noop` aus **unabhängigen** Beispielservern fälschlich. 022 entschärft per Exclude, behebt aber nicht die **Ursache**.
-- **Fix:** Kollision nur innerhalb einer logischen Server-Grenze werten (gleiche Datei bzw. gleiche `FastMCP()`/`Server()`-Instanz / gleiches Verzeichnis-Modul). Recherchieren, welche Heuristik robust ist (Instanz-Tracking vs. Datei-Scope).
-- **Akzeptanz:** zwei separate Beispielserver mit je einem `echo`-Tool → **kein** Finding; zwei `echo`-Tools **im selben** Server → Finding bleibt.
+### 0.2 ☑ `P1` `M` — TOOL_NAME_COLLISION Datei-Scoping (Feature 026) — **ERLEDIGT** (`main`, 2026-07-15)
+- **Problem:** Kollisionen wurden global über die ganze Codebase gewertet; in SDK-Monorepos kollidierten `echo`/`greet`/`noop` aus **unabhängigen** Beispielservern fälschlich. 022 entschärfte per Exclude, behob aber nicht die **Ursache**.
+- **Fix:** Kollision nur innerhalb einer **Datei** werten (= Server-Boundary). **Evidenzbasiert**: erst Verzeichnis-Scope getestet, aber Real-World-Daten (python-sdk-Tutorials teilen flach ein Verzeichnis; mcp-atlassian nutzt getrennte `confluence_mcp`/`jira_mcp`) zeigten, dass Datei die richtige Grenze ist. **Alle** beobachteten FP waren cross-file.
+- **Ergebnis:** cross-file-FP-Flut → **0**. python-sdk 53→25 (Rest = same-file in `test_*.py` → Sache von `--exclude`), mcp-atlassian 6→3 (LOW-Near-Dups in echten Server-Dateien). Same-file-Duplikate bleiben erfasst. 376 Tests grün.
 
 ### 0.3 ☐ `P2` `S` — `python -m mcpfrisk` funktioniert nicht
 - **Problem:** Kein `mcpfrisk/__main__.py`; nur `python -m mcpfrisk.cli` läuft. README nennt korrekt `mcpfrisk.cli`, aber `python -m mcpfrisk` ist die erwartete Konvention.

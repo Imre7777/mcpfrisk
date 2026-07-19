@@ -88,9 +88,27 @@ class ToolNameCollisionCheck(BaseCheck):
         occurrences = self._collect_occurrences(target_path)
         if len(occurrences) < 2:
             return []
+        # Datei-Scoping (Feature 026): Tool-Shadowing setzt DENSELBEN Server
+        # voraus. Real-World-Befund (python-sdk, mcp-atlassian, 2026-07): jede
+        # Quelldatei ist typischerweise ein eigenständiger Server mit eigener
+        # FastMCP()/Server()-Instanz -- Doku-Tutorials (tutorial001.py,
+        # tutorial002.py, ...) und getrennte Beispielserver teilen zwar
+        # Verzeichnisse, aber NICHT den Namensraum; mcp-atlassian nutzt getrennte
+        # Sub-Server (confluence_mcp/jira_mcp), die beim Mounten geprefixt werden.
+        # Verglichen wird daher nur INNERHALB einer Datei. (Verbleibende, bewusst
+        # akzeptierte Grenze: ein über mehrere Dateien verteilter EINZELserver;
+        # das ist ohne Import-Auflösung nicht sicher von getrennten Servern zu
+        # unterscheiden und real selten.)
+        # iter_source_files liefert sortierte Dateien -> Gruppen deterministisch.
+        by_scope: dict[Path, list[_Occurrence]] = {}
+        for occ in occurrences:
+            by_scope.setdefault(occ.file, []).append(occ)
         findings: list[Finding] = []
-        findings.extend(self._exact_findings(occurrences))
-        findings.extend(self._near_duplicate_findings(occurrences))
+        for scope_occs in by_scope.values():
+            if len(scope_occs) < 2:
+                continue
+            findings.extend(self._exact_findings(scope_occs))
+            findings.extend(self._near_duplicate_findings(scope_occs))
         return findings
 
     def _collect_occurrences(self, target_path: Path) -> list[_Occurrence]:
@@ -146,12 +164,14 @@ class ToolNameCollisionCheck(BaseCheck):
             severity=Severity.MEDIUM,
             title=f"Doppelt registrierter Tool-Name '{name}'",
             description=(
-                f"Der Tool-Name '{name}' wird an {len(occs)} Stellen registriert "
-                f"({locs}). Welche Registrierung ein MCP-Client verwendet, ist ohne "
-                "Namespacing undefiniert -- eine überschattet still die andere "
-                "(Tool-Shadowing). Ein verstecktes Duplikat kann ein harmlos "
-                "wirkendes Tool verdecken. (Hinweis: geprüft wird nur DIESER "
-                "Server; Kollisionen mit fremden Servern sieht McpFrisk nicht.)"
+                f"Der Tool-Name '{name}' wird an {len(occs)} Stellen in derselben "
+                f"Datei registriert ({locs}). Welche Registrierung ein MCP-Client "
+                "verwendet, ist ohne Namespacing undefiniert -- eine überschattet "
+                "still die andere (Tool-Shadowing). Ein verstecktes Duplikat kann "
+                "ein harmlos wirkendes Tool verdecken. (Hinweis: gewertet wird nur "
+                "innerhalb derselben Datei/Server-Instanz; gleichnamige Tools in "
+                "getrennten Servern und Kollisionen mit fremden Repos sieht "
+                "McpFrisk bewusst nicht.)"
             ),
             file_path=primary.file,
             line_number=primary.line,
