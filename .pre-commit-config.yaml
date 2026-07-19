@@ -1,0 +1,26 @@
+# Local pre-commit hooks. Install once with:
+#   pip install pre-commit && pre-commit install
+#
+# Deliberately conservative: ruff lint (reusing the pyproject config, which
+# already excludes benchmark/corpus + tests/fixtures) plus a few non-invasive
+# hygiene hooks. NO ruff-format -- the codebase is not ruff-format-formatted and
+# we don't want a mass reformat. Fixtures/corpus are excluded from the whitespace
+# hooks because they intentionally contain "broken"/vulnerable sample code.
+exclude: '^(tests/fixtures/|benchmark/corpus/)'
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        name: ruff (lint)
+        args: [--fix]

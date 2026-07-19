@@ -1,0 +1,7 @@
+# Force reporters through the structured templates (no empty issues), and route
+# security reports to the private disclosure path instead of a public issue.
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability (private)
+    url: https://github.com/Imre7777/mcpfrisk/blob/main/SECURITY.md
+    about: Please do NOT open a public issue for security problems. Follow the private disclosure process in SECURITY.md.

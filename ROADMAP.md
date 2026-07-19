@@ -70,29 +70,29 @@ Der Block, der Vertrauen schafft: Plattform-Nachweis + das Tool muss selbst vorb
 
 ---
 
-## Phase 2 — Professionelle Repo-Hygiene (P1/P2, schnell)
+## Phase 2 — Professionelle Repo-Hygiene (P1/P2) — **weitgehend ERLEDIGT** (Feature 025, `main`, 2026-07-15)
 
 Standard-Signale für „ernstes Open-Source-Projekt". Größtenteils ein Nachmittag.
 
-### 2.1 ☐ `P1` `S` — Community-Health-Dateien
-- ☐ `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1)
-- ☐ `.github/ISSUE_TEMPLATE/bug_report.yml` + `feature_request.yml` + `config.yml`
-- ☐ `.github/PULL_REQUEST_TEMPLATE.md` (Checkliste: Tests? Doku? Constitution-Prinzipien?)
-- **Akzeptanz:** GitHub „Community Standards"-Seite zeigt alle Häkchen grün.
+### 2.1 ☑ `P1` `S` — Community-Health-Dateien
+- ☑ `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1)
+- ☑ `.github/ISSUE_TEMPLATE/bug_report.yml` + `feature_request.yml` + `config.yml`
+- ☑ `.github/PULL_REQUEST_TEMPLATE.md` (Checkliste entlang der Constitution)
+- **Akzeptanz:** GitHub „Community Standards"-Seite zeigt alle Häkchen grün (nach Push sichtbar).
 
-### 2.2 ☐ `P1` `S` — README-Badges + visueller Eindruck
-- ☐ Badges: CI-Status, PyPI-Version (nach Release), License, Python-Versionen, evtl. Coverage.
-- ☐ CLI-Demo: asciinema-Cast oder animiertes GIF eines echten Scans (verkauft das Tool in 5 Sekunden).
-- **Akzeptanz:** Badges rendern; Demo im README sichtbar.
+### 2.2 ◐ `P1` `S` — README-Badges + visueller Eindruck
+- ☑ Badges: CI-Status, Python-Versionen, License, Core-deps, Checks, OWASP — **waren bereits im README**.
+- ☐ CLI-Demo (asciinema/GIF) — offen, braucht Aufnahme-Tooling; **später** (Nicht-Ziel von 025).
+- ☐ PyPI-Version-Badge — erst nach Release (Phase 6).
 
-### 2.3 ☐ `P1` `S` — pre-commit-Hook (du wolltest ihn ohnehin)
-- ☐ `.pre-commit-config.yaml`: ruff (lint+format), evtl. schneller Smoke-Test, trailing-whitespace/EOF-Fixer.
-- ☐ Doku in CONTRIBUTING.md: `pre-commit install`.
-- **Akzeptanz:** `pre-commit run --all-files` läuft grün lokal.
+### 2.3 ☑ `P1` `S` — pre-commit-Hook
+- ☑ `.pre-commit-config.yaml`: ruff (lint, `--fix`) + Basis-Hooks (trailing-whitespace, EOF-fixer, check-yaml, merge-conflict, large-files); Fixtures/Corpus ausgenommen. KEIN ruff-format (kein Mass-Reformat).
+- ☑ Doku in CONTRIBUTING.md: `pip install pre-commit && pre-commit install`.
+- **Akzeptanz:** Config valide; ruff bereits grün. (Hinweis: `pre-commit run --all-files` lokal erst nach `pip install pre-commit` — nicht im aktuellen venv verfügbar.)
 
-### 2.4 ☐ `P2` `S` — Zitier-/Metadaten
-- ☐ `CITATION.cff` (Zenodo-kompatibel — falls jemand das Tool in Papern zitiert).
-- ☐ `.github/FUNDING.yml` (optional).
+### 2.4 ◐ `P2` `S` — Zitier-/Metadaten
+- ☑ `CITATION.cff` (CFF 1.2.0).
+- ☐ `.github/FUNDING.yml` (optional — bewusst ausgelassen).
 
 ---
 

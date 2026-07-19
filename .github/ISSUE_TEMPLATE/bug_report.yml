@@ -1,0 +1,80 @@
+name: Bug report
+description: A false positive/negative, a crash, or wrong output from McpFrisk.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please do **not** report security issues here —
+        see [SECURITY.md](../blob/main/SECURITY.md) for private disclosure.
+  - type: input
+    id: version
+    attributes:
+      label: McpFrisk version
+      description: Output of `mcpfrisk --version`.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.12.x"
+    validations:
+      required: true
+  - type: dropdown
+    id: jsts
+    attributes:
+      label: Was the jsts extra installed?
+      description: "`pip install mcpfrisk[jsts]` (tree-sitter for JS/TS)."
+      options:
+        - "Yes"
+        - "No"
+        - "Not sure"
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of bug?
+      options:
+        - False positive (finding that should not fire)
+        - False negative (missed vulnerability)
+        - Crash / traceback
+        - Wrong severity / message
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: The smallest code/config that triggers it. Paste the snippet or a link.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs. actual
+      description: What you expected, and what McpFrisk did instead.
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Scan output
+      description: Relevant terminal/JSON/SARIF output (redact any real secrets).
+      render: shell
+    validations:
+      required: false

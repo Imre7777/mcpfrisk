@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use McpFrisk in your research, please cite it as below."
+title: "McpFrisk"
+abstract: >-
+  A pre-deploy / CI security scanner (linter) for Model Context Protocol (MCP)
+  server source code. It runs before release, catching vulnerabilities while the
+  author can still fix them, with a stdlib-only core and evidence-grounded
+  findings mapped to OWASP MCP Top 10 and CWE.
+type: software
+authors:
+  - family-names: "Obermueller"
+    given-names: "Imre"
+repository-code: "https://github.com/Imre7777/mcpfrisk"
+url: "https://github.com/Imre7777/mcpfrisk"
+license: Apache-2.0
+version: "0.1.0"
+keywords:
+  - mcp
+  - model-context-protocol
+  - security
+  - static-analysis
+  - linter
+  - ci

@@ -16,6 +16,15 @@ pytest -q                                          # run the suite
 ruff check .                                       # lint
 ```
 
+Optionally install the git hooks so lint + basic hygiene run automatically on
+every commit:
+
+```bash
+pip install pre-commit && pre-commit install       # runs ruff etc. on commit
+```
+
+By participating you agree to abide by our [Code of Conduct](./CODE_OF_CONDUCT.md).
+
 ## The non-negotiables (project constitution)
 
 Every change is held to these principles (see [`CONTEXT.md`](./CONTEXT.md) for the
