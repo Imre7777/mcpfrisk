@@ -105,13 +105,13 @@ Standard-Signale für „ernstes Open-Source-Projekt". Größtenteils ein Nachmi
 
 Über die reine Zeilen-Coverage hinaus — beweisen, dass die Logik stimmt.
 
-### 3.1 ☐ `P1` `S` — Cross-Platform-Tests real (deckt sich mit 1.1)
-- Sicherstellen, dass Pfad-/Ignore-Logik auf Windows getestet wird, nicht nur angenommen.
+### 3.1 ☑ `P1` `S` — Cross-Platform-Tests real (deckt sich mit 1.1) — **ERLEDIGT** (via Feature 024)
+- Abgedeckt durch die wöchentliche `cross-platform.yml` (Windows + macOS) plus die volle Suite, die lokal auf Windows grün läuft. Pfad-/Ignore-Logik wird real getestet, nicht angenommen.
 
-### 3.2 ☐ `P1` `M` — Property-based / Fuzz auf Parsern & is_excluded
+### 3.2 ☑ `P1` `M` — Property-based / Fuzz auf Parsern & is_excluded (Feature 029) — **ERLEDIGT** (`main`, 2026-07-15)
 - **Warum:** Zero-Crash-Garantie bei beliebigem Input ist bei einem Security-Tool Pflicht.
-- **Umsetzung:** `hypothesis` gegen `is_excluded`, den Ignore-Parser und die AST-Extraktion (`core/sourcetree`). Muster: „darf nie werfen, egal welcher String".
-- **Akzeptanz:** Fuzz-Tests in der Suite; keine ungefangenen Exceptions.
+- **Umsetzung:** stdlib-Fuzz (fester Seed, deterministisch) statt hypothesis (bewusst: keine externe Dev-Dep, Zero-Dep-Ethos). Adversarialer Input gegen `is_excluded`/`exclude_context`, `load_ignore_patterns`, `analyze()` (py/ts/js + Binärmüll) und `run_static_scan` (ganzer Müll-Baum).
+- **Ergebnis:** 8 Fuzz-Tests grün, **kein Crash gefunden** — die Kapselungs-/Degradations-Architektur hält. Als Regression zementiert.
 
 ### 3.3 ☐ `P2` `M` — Mutation-Testing
 - **Warum:** 90 % Coverage ≠ 90 % Aussagekraft. Mutation-Testing zeigt, ob Tests echte Regressionen fangen.
